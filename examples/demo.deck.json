@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "title": "Ideas, in motion.",
+  "author": "SLIDECRAFT / FIELD NOTES 001",
+  "theme": { "mode": "dark", "accent": "#cbff73" },
+  "slides": [
+    {
+      "id": "opening",
+      "layout": "cover",
+      "eyebrow": "A new way to shape your story",
+      "title": "Good ideas deserve a great stage.",
+      "body": "From a rough thought to a presentation that moves.\nBuilt with you. Refined with your agent.",
+      "notes": "Open with the idea, not the tool. This sample deck demonstrates the authoring system; replace it with your own story.",
+      "motion": "rise"
+    },
+    {
+      "id": "the-problem",
+      "layout": "split",
+      "eyebrow": "01 / The starting point",
+      "title": "The first draft is just the beginning.",
+      "body": "Your thinking evolves. Your presentation should keep up.",
+      "bullets": ["Start with a conversation, not a blank slide.", "Change one idea without rebuilding the deck.", "See every revision as soon as it is saved."],
+      "notes": "Ask the audience how often the story changes after the first draft. Explain that stable slide IDs make focused revisions possible.",
+      "motion": "slide"
+    },
+    {
+      "id": "the-workflow",
+      "layout": "cards",
+      "eyebrow": "02 / A shared workspace",
+      "title": "You direct. Your agent helps build.",
+      "cards": [
+        { "title": "Find the story", "body": "Clarify the audience, the takeaway, and the decision you want to inspire." },
+        { "title": "Make it visible", "body": "Turn the outline into expressive layouts, diagrams, and purposeful motion." },
+        { "title": "Refine together", "body": "Ask questions. Challenge the argument. Edit a slide. Watch it improve." }
+      ],
+      "notes": "Each card is a separate part of the iterative loop. The agent works on files; the browser gives you immediate visual feedback.",
+      "motion": "rise"
+    },
+    {
+      "id": "principle",
+      "layout": "statement",
+      "eyebrow": "One design principle",
+      "title": "Motion should explain the idea.",
+      "body": "Reveal relationships. Guide attention. Give the important moment room to land.",
+      "notes": "Avoid animating everything just because it is possible. Prefer one visual argument and one motion language per slide. Reduced-motion preferences are respected.",
+      "motion": "fade"
+    },
+    {
+      "id": "under-the-hood",
+      "layout": "metrics",
+      "eyebrow": "03 / Simple foundations",
+      "title": "Your presentation stays yours.",
+      "metrics": [
+        { "value": "1", "label": "Editable JSON source for the story, design, and notes" },
+        { "value": "7", "label": "Starting layouts, plus custom HTML and JavaScript" },
+        { "value": "0", "label": "Runtime packages or accounts required" }
+      ],
+      "notes": "These numbers describe this tool, not business performance. Export produces one HTML file. External media, if added, still require connectivity unless embedded.",
+      "motion": "zoom"
+    },
+    {
+      "id": "iteration-loop",
+      "layout": "timeline",
+      "eyebrow": "04 / Keep the loop short",
+      "title": "Better with every conversation.",
+      "steps": [
+        { "title": "Brief", "body": "Who is this for? What needs to change?" },
+        { "title": "Draft", "body": "Build a clear narrative with a strong point of view." },
+        { "title": "Review", "body": "Preview the flow, timing, and visual hierarchy." },
+        { "title": "Refine", "body": "Make a focused edit. Rehearse. Repeat." }
+      ],
+      "notes": "You can ask the agent questions without changing files. When a revision is requested, it should preserve unrelated slides and report what changed.",
+      "motion": "rise"
+    },
+    {
+      "id": "next-idea",
+      "layout": "cover",
+      "eyebrow": "Start with something worth saying",
+      "title": "What is your next big idea?",
+      "body": "Tell your agent the audience, the goal, and the time you have. Then make the first version together.",
+      "notes": "Close by inviting a concrete next step: start a new deck, ask for an outline, or revise this sample.",
+      "motion": "rise"
+    }
+  ]
+}

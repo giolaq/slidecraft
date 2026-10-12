@@ -1,0 +1,15 @@
+{
+  "name": "slidecraft-local",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local, agent-friendly HTML presentation studio",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "bin": { "slidecraft": "bin/slidecraft.js" },
+  "scripts": {
+    "start": "node bin/slidecraft.js serve examples/demo.deck.json",
+    "test": "node --test tests/core.test.js",
+    "test:browser": "node tests/browser-check.mjs",
+    "build": "node bin/slidecraft.js render examples/demo.deck.json --out dist/demo.html"
+  }
+}
