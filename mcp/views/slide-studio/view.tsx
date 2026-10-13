@@ -1,3 +1,4 @@
+import { Presenter } from "./presenter.js";
 import { editsSchema } from "./edits.js";
 import { CodePreview } from "./code-preview.js";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
@@ -37,6 +38,7 @@ function StandardSlideCanvas({
   const outer = useRef<HTMLDivElement>(null),
     stage = useRef<HTMLElement>(null);
   const [scale, setScale] = useState(0.5);
+  const [failedImage, setFailedImage] = useState<string | null>(null);
   useEffect(() => {
     const el = outer.current;
     if (!el) return;
@@ -114,6 +116,26 @@ function StandardSlideCanvas({
             )}
           </div>
           <div className="sc-details">
+            {slide.image && (
+              <figure className="sc-photo">
+                {failedImage === slide.image.src ? (
+                  <p role="alert">
+                    Photo unavailable: {slide.image.alt}. Re-import it using
+                    add-photo.
+                  </p>
+                ) : (
+                  <img
+                    src={slide.image.src}
+                    alt={slide.image.alt}
+                    style={{ objectFit: slide.image.fit }}
+                    onError={() => setFailedImage(slide.image!.src)}
+                  />
+                )}
+                {slide.image.caption && (
+                  <figcaption>{slide.image.caption}</figcaption>
+                )}
+              </figure>
+            )}
             {slide.bullets && (
               <ul className="sc-bullets">
                 {slide.bullets.map((s, i) => (
@@ -216,6 +238,7 @@ export function Studio({
     deck: initial,
     selectedSlideId: initialSelectedSlideId ?? initial.slides[0].id,
   });
+  const [presenting, setPresenting] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Connecting…");
   const signature = JSON.stringify(initial),
     previous = useRef(signature),
@@ -512,6 +535,37 @@ export function Studio({
       setNotice("Export ready. Choose Download file below.");
     });
   }
+  useEffect(() => {
+    if (!presenting) return;
+    let entered = Boolean(document.fullscreenElement);
+    const changed = () => {
+      if (document.fullscreenElement) entered = true;
+      else if (entered) setPresenting(false);
+    };
+    document.addEventListener("fullscreenchange", changed);
+    return () => document.removeEventListener("fullscreenchange", changed);
+  }, [presenting]);
+  async function startPresenting() {
+    setPresenting(true);
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      if (availableDisplayModes.includes("fullscreen")) {
+        try {
+          await requestDisplayMode({ mode: "fullscreen" });
+        } catch {
+          setNotice(
+            "Present mode is open. Browser fullscreen is unavailable in this host; export HTML to present in a separate browser tab.",
+          );
+        }
+      }
+    }
+  }
+  function stopPresenting() {
+    setPresenting(false);
+    if (document.fullscreenElement)
+      void document.exitFullscreen().catch(() => {});
+  }
   async function downloadFile() {
     if (!download) return;
     await run(async () => {
@@ -553,6 +607,14 @@ export function Studio({
         }
       }}
     >
+      {presenting && (
+        <Presenter
+          deck={deck}
+          slide={slide}
+          onSelect={select}
+          onClose={stopPresenting}
+        />
+      )}
       <ModelContext
         content={`Slidecraft active deck ${deck.id}, revision ${deck.revision}. Selected slide ${slide.id} (${position + 1}/${deck.slides.length}): ${slide.title}. The complete latest deck is in view state. Questions do not authorize edits. Connected studios reload shared live revisions automatically. Preserve syncToken in edits. JSON export preserves a durable copy.`}
       />
@@ -572,6 +634,7 @@ export function Studio({
         </div>
         <span className="sc-badge">STUDIO</span>
         <div className="sc-spacer" />
+        <button onClick={() => void startPresenting()}>Present</button>
         <button disabled={busy} onClick={() => importInput.current?.click()}>
           Import JSON
         </button>
@@ -609,8 +672,8 @@ export function Studio({
           e.target.value = "";
           if (file)
             void run(async () => {
-              if (file.size > 200000)
-                throw new Error("JSON file must be smaller than 200 KB.");
+              if (file.size > 1500000)
+                throw new Error("JSON file must be smaller than 1.5 MB.");
               const parsed = JSON.parse(await file.text());
               const d = checkDeck({
                 ...parsed,
@@ -814,7 +877,7 @@ export function Studio({
           <div className="sc-bottom">
             <span>Revision {deck.revision} · Saved in view state</span>
             <span role="status" aria-label="Live connection status">
-              {syncStatus} · v1.4.1
+              {syncStatus} · v1.5.0
             </span>
             <label>
               <input

@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { chromium } from "playwright-core";
 import { createServer } from "node:http";
 import assert from "node:assert/strict";
@@ -30,7 +31,7 @@ const resource = await rpc("resources/read", {
   uri: "ui://views/slide-studio.html",
 });
 const encode = (x) => JSON.stringify(x).replace(/</g, "\\u003c");
-const html = `<!doctype html><html><body style="margin:0"><iframe title="Slidecraft test host" style="width:100%;height:1600px;border:0"></iframe><script>
+const html = `<!doctype html><html><body style="margin:0"><iframe allow="fullscreen" title="Slidecraft test host" style="width:100%;height:1600px;border:0"></iframe><script>
 let initial=${encode(result)};const f=document.querySelector('iframe');window.requests=[];window.latestContext=null;
 addEventListener('message',async e=>{if(e.source!==f.contentWindow||!e.data?.jsonrpc)return;const m=e.data;if(!m.method){window.widgetResult=m;return;}window.requests.push(m.method);const send=x=>f.contentWindow.postMessage({jsonrpc:'2.0',...x},'*');
 if(m.method==='ui/notifications/initialized'){send({method:'ui/notifications/tool-input',params:{arguments:{}}});send({method:'ui/notifications/tool-result',params:initial});return;}
@@ -430,13 +431,120 @@ try {
     "yes",
   );
   await customExport.close();
+  const currentLive = await rpc("tools/call", {
+    name: "get-live-deck",
+    arguments: { syncToken: remoteResult.structuredContent.deck.syncToken },
+  });
+  const imageBytes = await sharp({
+    create: { width: 100, height: 100, channels: 3, background: "#2299ff" },
+  })
+    .png()
+    .toBuffer();
+  const withPhoto = await rpc("tools/call", {
+    name: "add-photo",
+    arguments: {
+      deck: currentLive.structuredContent.deck,
+      expectedRevision: currentLive.structuredContent.deck.revision,
+      slideId: imported.slides[1].id,
+      source: "data:image/png;base64," + imageBytes.toString("base64"),
+      alt: "Visible test photo",
+      caption: "Photo caption",
+    },
+  });
+  assert.ok(!withPhoto.isError, JSON.stringify(withPhoto));
+  await custom.getByAltText("Visible test photo").waitFor();
+  assert.ok(
+    await custom
+      .getByAltText("Visible test photo")
+      .evaluate((img) => img.complete && img.naturalWidth > 0),
+  );
+  await frame.getByRole("button", { name: "Present", exact: true }).click();
+  const presentation = frame.getByRole("dialog", {
+    name: "Presentation",
+    exact: true,
+  });
+  await presentation.waitFor();
+  assert.ok(
+    await frame
+      .locator("html")
+      .evaluate(() => Boolean(document.fullscreenElement)),
+  );
+  const audience = presentation.frameLocator("iframe");
+  await audience.locator(".slide.active .slide-photo img").waitFor();
+  assert.equal(await audience.locator("#notes-toggle").isVisible(), false);
+  assert.ok(
+    !(await audience
+      .locator("#deck-data")
+      .textContent()
+      .then((text) => JSON.parse(text).slides.some((s) => s.notes))),
+  );
+  await presentation
+    .getByRole("button", { name: "Next slide", exact: true })
+    .click();
+  await presentation.getByText("3 / 7", { exact: true }).waitFor();
+  await presentation
+    .getByRole("button", { name: "Speaker view", exact: true })
+    .click();
+  const speaker = frame.getByRole("dialog", {
+    name: "Speaker view",
+    exact: true,
+  });
+  await speaker
+    .getByRole("heading", { name: "Speaker notes", exact: true })
+    .waitFor();
+  await speaker
+    .getByRole("heading", { name: "Next slide", exact: true })
+    .waitFor();
+  await speaker
+    .getByRole("button", { name: "Exit presentation", exact: true })
+    .click();
+  await frame.getByRole("button", { name: "Present", exact: true }).waitFor();
+  const plain = structuredClone(result.structuredContent.deck);
+  delete plain.syncToken;
+  const plainPhoto = await rpc("tools/call", {
+    name: "add-photo",
+    arguments: {
+      deck: plain,
+      expectedRevision: 0,
+      slideId: plain.slides[0].id,
+      source: "data:image/png;base64," + imageBytes.toString("base64"),
+      alt: "Native photo",
+    },
+  });
+  assert.ok(!plainPhoto.isError);
+  const photoResource = await rpc("resources/read", {
+    uri: "ui://views/photo-preview.html",
+  });
+  await page.evaluate(({ r, html }) => window.showPreview(r, html), {
+    r: plainPhoto,
+    html: photoResource.contents[0].text,
+  });
+  await frame.getByAltText("Native photo").waitFor();
+  assert.ok(
+    await frame
+      .getByAltText("Native photo")
+      .evaluate((img) => img.complete && img.naturalWidth > 0),
+  );
+  const exportedPhoto = await rpc("tools/call", {
+    name: "export-deck",
+    arguments: { deck: plainPhoto.structuredContent.deck, format: "html" },
+  });
+  const photoPage = await browser.newPage();
+  await photoPage.setContent(exportedPhoto._meta.fileText);
+  await photoPage.getByAltText("Native photo").waitFor();
+  assert.ok(
+    await photoPage
+      .getByAltText("Native photo")
+      .evaluate((img) => img.complete && img.naturalWidth > 0),
+  );
+  await photoPage.close();
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.waitForTimeout(200);
   const box = await frame.locator(".sc-studio").boundingBox();
   assert.ok(box.width <= 390);
   assert.deepEqual(errors, []);
   console.log(
-    "Widget checks passed: separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
+    "Widget checks passed: decoded embedded image, audience presentation, speaker notes, slide navigation, separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
   );
 } finally {
   await browser.close();

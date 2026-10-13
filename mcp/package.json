@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=22.22.2"
   },
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "Animated presentation authoring for ChatGPT and MCP clients",
   "author": "Giovanni Laquidara",
   "license": "MIT",
@@ -31,9 +31,11 @@
   "dependencies": {
     "dompurify": "^3.4.17",
     "fast-json-patch": "^3.1.1",
+    "ipaddr.js": "^2.5.0",
     "mcp-use": "2.8.2",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
+    "sharp": "^0.35.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {

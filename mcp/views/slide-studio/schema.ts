@@ -41,6 +41,20 @@ export const slideSchema = z
       "custom",
     ]),
     colors: slideColorsSchema.optional(),
+    image: z
+      .object({
+        src: z
+          .string()
+          .max(180000)
+          .regex(
+            /^(https:\/\/[^\s]+|data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+)$/,
+          ),
+        alt: short.min(1),
+        caption: short.optional(),
+        fit: z.enum(["contain", "cover"]).default("contain"),
+      })
+      .strict()
+      .optional(),
     title: short.min(1),
     eyebrow: short.optional(),
     body: prose.optional(),
@@ -86,9 +100,9 @@ export const deckResultSchema = z.object({
 });
 export function checkDeck(input: unknown): Deck {
   const deck = deckSchema.parse(input);
-  if (JSON.stringify(deck).length > 180000)
+  if (JSON.stringify(deck).length > 1500000)
     throw new Error(
-      "Deck exceeds 180 KB. Split it into smaller presentations.",
+      "Deck exceeds 1.5 MB. Split it into smaller presentations.",
     );
   const ids = new Set<string>();
   for (const s of deck.slides) {

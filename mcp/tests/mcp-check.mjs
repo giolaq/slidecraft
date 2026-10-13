@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 const url = process.argv[2] || "http://localhost:3000/mcp";
@@ -27,7 +28,7 @@ async function rpc(method, params = {}) {
 }
 const call = (name, args = {}) => rpc("tools/call", { name, arguments: args });
 const tools = await rpc("tools/list");
-assert.equal(tools.tools.length, 9);
+assert.equal(tools.tools.length, 10);
 const open = tools.tools.find((t) => t.name === "open-slides");
 assert.equal(open._meta["openai/ui"].entrypoints.length, 2);
 const initial = await call("open-slides");
@@ -247,6 +248,32 @@ const direct = await fetch(liveUrl, {
 assert.equal(direct.status, 200);
 assert.equal(direct.headers.get("cache-control"), "no-store");
 assert.equal((await direct.json()).deck.revision, 1);
+const png = await sharp({
+  create: { width: 100, height: 100, channels: 3, background: "#ff9900" },
+})
+  .png()
+  .toBuffer();
+const photo = await call("add-photo", {
+  deck,
+  expectedRevision: 0,
+  slideId: deck.slides[1].id,
+  source: "data:image/png;base64," + png.toString("base64"),
+  alt: "Orange test image",
+});
+assert.ok(!photo.isError, JSON.stringify(photo));
+assert.match(
+  photo.structuredContent.deck.slides[1].image.src,
+  /^data:image\/webp;base64,/,
+);
+assert.deepEqual(photo.structuredContent.deck.slides[0], deck.slides[0]);
+const privatePhoto = await call("add-photo", {
+  deck,
+  expectedRevision: 0,
+  slideId: deck.slides[1].id,
+  source: "https://127.0.0.1/a.png",
+  alt: "Blocked",
+});
+assert.ok(privatePhoto.isError);
 const inspected = await call("inspect-deck", { deck });
 assert.equal(inspected.structuredContent.slides.length, 7);
 const exported = await call("export-deck", { deck, format: "html" });
@@ -263,5 +290,5 @@ assert.ok(JSON.stringify(skills).includes("slidecraft"));
 await writeFile("/tmp/slidecraft-mcp-initial.json", JSON.stringify(initial));
 await writeFile("/tmp/slidecraft-mcp-resource.json", JSON.stringify(resource));
 console.log(
-  `MCP checks passed at ${url}: 9 tools, entrypoints, create, revise, move, inspect, errors, exports, view resource, skill discovery.`,
+  `MCP checks passed at ${url}: 10 tools, entrypoints, create, revise, move, inspect, errors, exports, view resource, skill discovery.`,
 );

@@ -1,3 +1,4 @@
+import { importPhoto } from "./src/import-photo.js";
 import { latestDeck, publishDeck } from "./src/live-decks.js";
 import { applyEdits, editsSchema } from "./views/slide-studio/edits.js";
 import { MCPServer } from "mcp-use";
@@ -19,11 +20,11 @@ import { render } from "./src/render.js";
 const server = new MCPServer({
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.4.1",
+  version: "1.5.0",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
-    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance; this is not durable storage. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
+    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance; this is not durable storage. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
   websiteUrl: "https://github.com/giolaq/slidecraft",
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
 });
@@ -311,6 +312,48 @@ export const revisePresentation = server.tool(
           ? next.slides[Number(affectedIndex)]?.id
           : undefined);
       return result(next, `Applied ${edits.length} edit operations.`, focus);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+export const addPhoto = server.tool(
+  {
+    name: "add-photo",
+    title: "Add a visible photo to a slide",
+    description:
+      "Download and embed an optimized photo so it displays in the studio and exported HTML without an external image request. Supply a direct public HTTPS JPEG/PNG/WebP/GIF URL or base64 image data. Web page URLs and private-network URLs are rejected. Replaces the target slide image; preserves other slide content. Do not claim a photo was added unless this tool succeeds. Use image.alt to describe the actual photo. Use update-slide to change image caption/fit or revise-presentation to remove /slides/INDEX/image.",
+    inputSchema: z.object({
+      deck: deckSchema,
+      expectedRevision: z.number().int().nonnegative(),
+      slideId: z.string(),
+      source: z.string().max(11_000_000),
+      alt: z.string().min(1).max(500),
+      caption: z.string().max(500).optional(),
+      fit: z.enum(["contain", "cover"]).default("contain"),
+    }),
+    outputSchema: deckResultSchema,
+    annotations: { ...hints, openWorldHint: true },
+    view: { name: "photo-preview", prefersBorder: false },
+  },
+  async ({ deck, expectedRevision, slideId, source, alt, caption, fit }) => {
+    try {
+      if (deck.revision !== expectedRevision)
+        throw new Error("Revision mismatch. Read the latest live deck.");
+      if (!deck.slides.some((s) => s.id === slideId))
+        throw new Error("Unknown slide ID.");
+      const src = await importPhoto(source);
+      return result(
+        reviseSlide(
+          deck,
+          slideId,
+          { image: { src, alt, caption, fit } },
+          expectedRevision,
+        ),
+        "Embedded the optimized photo in the slide.",
+        slideId,
+      );
     } catch (e) {
       return fail(e);
     }
