@@ -27,12 +27,13 @@ async function rpc(method, params = {}) {
 }
 const call = (name, args = {}) => rpc("tools/call", { name, arguments: args });
 const tools = await rpc("tools/list");
-assert.equal(tools.tools.length, 8);
+assert.equal(tools.tools.length, 9);
 const open = tools.tools.find((t) => t.name === "open-slides");
 assert.equal(open._meta["openai/ui"].entrypoints.length, 2);
 const initial = await call("open-slides");
 assert.ok(!initial.isError);
-const deck = initial.structuredContent.deck;
+const deck = structuredClone(initial.structuredContent.deck);
+delete deck.syncToken;
 const changed = await call("update-slide", {
   deck,
   slideId: deck.slides[0].id,
@@ -207,6 +208,35 @@ const staleGeneral = await call("revise-presentation", {
   edits: [{ op: "replace", path: "/title", value: "Stale" }],
 });
 assert.ok(staleGeneral.isError);
+const liveInitial = (await call("open-slides")).structuredContent.deck;
+assert.notEqual(
+  liveInitial.syncToken,
+  initial.structuredContent.deck.syncToken,
+);
+const liveChanged = await call("set-theme", {
+  deck: liveInitial,
+  expectedRevision: 0,
+  colors: { background: "#ff0000" },
+});
+assert.ok(!liveChanged.isError);
+const liveRead = await call("get-live-deck", {
+  syncToken: liveInitial.syncToken,
+});
+assert.equal(liveRead.structuredContent.deck.theme.background, "#ff0000");
+assert.equal(liveRead.structuredContent.deck.revision, 1);
+const conflict = await call("set-theme", {
+  deck: liveInitial,
+  expectedRevision: 0,
+  colors: { background: "#0000ff" },
+});
+assert.ok(conflict.isError);
+const reopened = await call("open-slides", { deck: liveInitial });
+assert.equal(reopened.structuredContent.deck.revision, 1);
+assert.equal(
+  (await call("get-live-deck", { syncToken: "0".repeat(64) })).structuredContent
+    .deck,
+  null,
+);
 const inspected = await call("inspect-deck", { deck });
 assert.equal(inspected.structuredContent.slides.length, 7);
 const exported = await call("export-deck", { deck, format: "html" });
@@ -223,5 +253,5 @@ assert.ok(JSON.stringify(skills).includes("slidecraft"));
 await writeFile("/tmp/slidecraft-mcp-initial.json", JSON.stringify(initial));
 await writeFile("/tmp/slidecraft-mcp-resource.json", JSON.stringify(resource));
 console.log(
-  `MCP checks passed at ${url}: 8 tools, entrypoints, create, revise, move, inspect, errors, exports, view resource, skill discovery.`,
+  `MCP checks passed at ${url}: 9 tools, entrypoints, create, revise, move, inspect, errors, exports, view resource, skill discovery.`,
 );

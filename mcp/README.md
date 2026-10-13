@@ -41,18 +41,16 @@ engineering audience. We have ten minutes.” Then: “Make the third slide clea
 
 ## Widget and persistence
 
-Color edits use `set-theme`, which returns the changed deck and an updated preview. A mounted `change-visible-slide-colors` tool can update the open widget directly where supported. Earlier preview cards remain historical snapshots.
+Color edits use `set-theme`, which returns the changed deck and an updated preview. A mounted `change-visible-slide-colors` tool can update the open widget directly where supported. Connected studios reload newer revisions automatically.
 
 The studio provides slide navigation, automatic entrance animations, speaker
 notes, direct title/body/notes editing, JSON import, HTML/JSON export, motion
 replay, and an Ask agent action where the host supports follow-up messages.
 Fullscreen is requested through the host and depends on host support.
 
-Decks travel as complete JSON snapshots. Tools are stateless and do not retain
-user decks in global variables or a database. View state gives the host the
+Decks travel as complete JSON snapshots. A private syncToken connects them to a live revision stored on the server filesystem for up to 24 hours. View state gives the host the
 latest deck and selected slide. **Download JSON to preserve a durable copy**;
-host state is not a cloud storage service. A revision check validates the supplied
-snapshot, not a centralized concurrency lock. Notes are preserved in JSON;
+host state is not a cloud storage service. Revision checks reject stale updates to the shared live session. Notes are preserved in JSON;
 HTML excludes notes unless the user enables them.
 
 Custom HTML/SVG, CSS, and JavaScript render in an isolated iframe using the same renderer as the HTML export. Authored code cannot access the studio document or host bridge; the sandbox allows scripts but not same-origin access. Host CSP may restrict external resources.
@@ -109,3 +107,5 @@ Single-slide colors: call `set-theme` with `slideId` and a partial `colors` pale
 Use `revise-presentation` with the latest deck, expectedRevision, and an array of JSON Patch edits. A mounted `edit-visible-presentation` tool uses the latest widget state automatically. Edit text, nested arrays, speaker notes, layouts, colors, typography, spacing, custom HTML/SVG, CSS, JavaScript, or the entire slide list. Transactions validate as a whole and preserve the input on error. Remove optional fields to reset them. Copy plus a new unique id duplicates a slide. See the bundled authoring skill for examples.
 
 Custom content runs inside the isolated preview. External media depend on host CSP; embedded images/SVG work without third-party requests. Tests cover the actual server and browser runtime with a simulated host bridge, not the ChatGPT application's own tool-selection behavior.
+
+Live sync: connected studios check `get-live-deck` approximately every two seconds and adopt newer revisions without imports. Preserve `syncToken` when editing. The token is a private bearer capability: anyone receiving the full JSON can access that live session. Importing JSON forks a new session. Old pre-sync widgets need one reopen. Sync currently targets a single server instance, expires after 24 hours without a saved edit, and is not a durable storage service. A host may pause off-screen widgets; they catch up when resumed.

@@ -36,6 +36,7 @@ export function applyEdits(
     true,
   ).newDocument;
   if (
+    candidate?.syncToken !== original.syncToken ||
     candidate?.id !== original.id ||
     candidate?.version !== original.version ||
     candidate?.revision !== original.revision

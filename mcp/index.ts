@@ -1,3 +1,4 @@
+import { latestDeck, publishDeck } from "./src/live-decks.js";
 import { applyEdits, editsSchema } from "./views/slide-studio/edits.js";
 import { MCPServer } from "mcp-use";
 import { z } from "zod";
@@ -18,16 +19,16 @@ import { render } from "./src/render.js";
 const server = new MCPServer({
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.3.0",
+  version: "1.4.0",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
-    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Tools are stateless: pass the latest complete deck, including id and revision, from the conversation or view state. Never claim a deck is stored on the server. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; the new preview is authoritative and older cards are historical snapshots. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
+    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance; this is not durable storage. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
   websiteUrl: "https://github.com/giolaq/slidecraft",
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
 });
 const hints = {
-  readOnlyHint: true,
+  readOnlyHint: false,
   destructiveHint: false,
   openWorldHint: false,
 };
@@ -37,8 +38,14 @@ const fail = (e: unknown) => ({
     { type: "text" as const, text: e instanceof Error ? e.message : String(e) },
   ],
 });
-function result(deck: Deck, message: string, selectedSlideId?: string) {
-  message += ` Revision ${deck.revision}. Preview theme: ${JSON.stringify(deck.theme)}. See the updated preview returned by this tool; earlier cards do not change.`;
+function result(
+  deck: Deck,
+  message: string,
+  selectedSlideId?: string,
+  opening = false,
+) {
+  deck = publishDeck(deck, opening);
+  message += ` Revision ${deck.revision}. Preview theme: ${JSON.stringify(deck.theme)}. Connected studios automatically load this revision.`;
   return {
     content: [{ type: "text" as const, text: message }],
     structuredContent: {
@@ -71,7 +78,9 @@ export const openSlides = server.tool(
       const d = checkDeck(deck ?? demo);
       return result(
         d,
-        `${d.title}: ${d.slides.length} slides, revision ${d.revision}. Download JSON to keep a copy.`,
+        "Opened the current live deck. Download JSON to keep a copy.",
+        undefined,
+        true,
       );
     } catch (e) {
       return fail(e);
@@ -147,7 +156,7 @@ export const editDeck = server.tool(
     view: { name: "edited-slides", prefersBorder: false },
     title: "Edit presentation structure",
     description:
-      "Return a revised deck by adding, removing, or moving a slide, or changing title/theme. No shared server copy is mutated.",
+      "Return a revised deck by adding, removing, or moving a slide, or changing title/theme. Connected studios automatically reload the revised shared deck.",
     inputSchema: z.object({
       deck: deckSchema,
       expectedRevision: z.number().int().nonnegative(),
@@ -282,6 +291,36 @@ export const revisePresentation = server.tool(
           ? next.slides[Number(affectedIndex)]?.id
           : undefined);
       return result(next, `Applied ${edits.length} edit operations.`, focus);
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+
+export const getLiveDeck = server.tool(
+  {
+    name: "get-live-deck",
+    title: "Read latest live deck",
+    description:
+      "Read the latest shared revision using the syncToken from a deck. Use after a revision conflict. Connected studios poll this automatically; no JSON import is required. Tokens are private bearer capabilities: do not invent or reveal them outside deck data.",
+    inputSchema: z.object({ syncToken: z.string().regex(/^[a-f0-9]{64}$/) }),
+    outputSchema: z.object({ deck: deckSchema.nullable() }),
+    annotations: { ...hints, readOnlyHint: true },
+  },
+  ({ syncToken }) => {
+    try {
+      const deck = latestDeck(syncToken);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: deck
+              ? `Latest revision ${deck.revision}.`
+              : "Live session expired or server restarted. Reopen the latest deck to resume.",
+          },
+        ],
+        structuredContent: { deck },
+      };
     } catch (e) {
       return fail(e);
     }

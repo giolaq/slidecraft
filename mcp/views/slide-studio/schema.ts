@@ -63,6 +63,10 @@ export const deckSchema = z
     version: z.literal(1),
     id: z.string().min(1).max(100),
     revision: z.number().int().nonnegative(),
+    syncToken: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     title: short.min(1),
     subtitle: short.optional(),
     author: short.optional(),

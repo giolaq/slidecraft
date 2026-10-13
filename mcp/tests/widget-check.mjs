@@ -76,6 +76,51 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const frame = page.frameLocator("iframe");
   await frame.locator(".sc-studio").waitFor();
+  const liveUpdate = await rpc("tools/call", {
+    name: "revise-presentation",
+    arguments: {
+      deck: result.structuredContent.deck,
+      expectedRevision: 0,
+      edits: [
+        {
+          op: "add",
+          path: "/slides/0/colors",
+          value: { background: "#ff0000" },
+        },
+        {
+          op: "add",
+          path: "/slides/1/colors",
+          value: { background: "#ff0000" },
+        },
+      ],
+    },
+  });
+  assert.ok(!liveUpdate.isError);
+  // No tool-result notification, new card, import, or reload is delivered to this studio.
+  await frame
+    .getByText("Revision 1 · Saved in view state", { exact: true })
+    .waitFor({ timeout: 15000 });
+  assert.equal(
+    await frame
+      .locator(".sc-slide")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(255, 0, 0)",
+  );
+  await frame.getByRole("button", { name: "Next →", exact: true }).click();
+  assert.equal(
+    await frame
+      .locator(".sc-slide")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(255, 0, 0)",
+  );
+  const fresh = await rpc("tools/call", { name: "open-slides", arguments: {} });
+  await page.evaluate(({ r, html }) => window.showPreview(r, html), {
+    r: fresh,
+    html: resource.contents[0].text,
+  });
+  await frame
+    .getByText("Revision 0 · Saved in view state", { exact: true })
+    .waitFor();
   await frame.getByRole("button", { name: "Next →", exact: true }).click();
   await frame
     .locator(".sc-slide h1")
@@ -116,6 +161,7 @@ try {
     id: "imported-test",
     title: "Imported story",
     revision: 0,
+    syncToken: undefined,
   };
   await frame.locator("input[type=file]").setInputFiles({
     name: "test.deck.json",
@@ -369,7 +415,7 @@ try {
   assert.ok(box.width <= 390);
   assert.deepEqual(errors, []);
   console.log(
-    "Widget checks passed: general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
+    "Widget checks passed: existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
   );
 } finally {
   await browser.close();

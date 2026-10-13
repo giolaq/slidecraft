@@ -237,7 +237,9 @@ export function Studio({
     edit = useCallTool("edit-deck"),
     exporter = useCallTool("export-deck"),
     themeUpdate = useCallTool("set-theme"),
-    revise = useCallTool("revise-presentation");
+    revise = useCallTool("revise-presentation"),
+    live = useCallTool("get-live-deck"),
+    opener = useCallTool("open-slides");
   const files = useFiles(),
     openExternal = useOpenExternal(),
     followUp = useSendFollowUp();
@@ -269,6 +271,48 @@ export function Studio({
     mounted.current = true;
   }, [signature, initial, initialSelectedSlideId, setState]);
   const deck = state.deck;
+  const liveCall = useRef(live.callTool);
+  liveCall.current = live.callTool;
+  useEffect(() => {
+    if (!deck.syncToken) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const token = deck.syncToken;
+    async function refresh() {
+      try {
+        const response = await liveCall.current({ syncToken: token });
+        const latest = response.structuredContent.deck;
+        if (!cancelled && latest)
+          setState((current) => {
+            if (
+              current.deck.syncToken !== token ||
+              current.deck.revision >= latest.revision
+            )
+              return current;
+            return {
+              deck: latest,
+              selectedSlideId: latest.slides.some(
+                (s) => s.id === current.selectedSlideId,
+              )
+                ? current.selectedSlideId
+                : latest.slides[0].id,
+            };
+          });
+      } catch {
+        /* Retry transient network/host failures without discarding edits. */
+      }
+      if (!cancelled) timer = setTimeout(refresh, 2000);
+    }
+    void refresh();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [deck.syncToken, setState]);
+  useEffect(() => {
+    setEditing(false);
+    setDownload(null);
+  }, [deck.revision]);
   const slide =
     deck.slides.find((s) => s.id === state.selectedSlideId) ?? deck.slides[0];
   const position = deck.slides.indexOf(slide);
@@ -450,7 +494,7 @@ export function Studio({
       }}
     >
       <ModelContext
-        content={`Slidecraft active deck ${deck.id}, revision ${deck.revision}. Selected slide ${slide.id} (${position + 1}/${deck.slides.length}): ${slide.title}. The complete latest deck is in view state. Questions do not authorize edits. No server-side storage; JSON export preserves the deck.`}
+        content={`Slidecraft active deck ${deck.id}, revision ${deck.revision}. Selected slide ${slide.id} (${position + 1}/${deck.slides.length}): ${slide.title}. The complete latest deck is in view state. Questions do not authorize edits. Connected studios reload shared live revisions automatically. Preserve syncToken in edits. JSON export preserves a durable copy.`}
       />
       <header className="sc-toolbar">
         <div className="sc-brand">
@@ -514,7 +558,9 @@ export function Studio({
                 revision: parsed.revision ?? 0,
                 theme: parsed.theme ?? { mode: "dark", accent: "#cbff73" },
               });
-              adopt(d);
+              delete d.syncToken;
+              const opened = await opener.callTool({ deck: d });
+              adopt(opened.structuredContent.deck);
               setEditing(false);
               setNotice("Deck imported into this conversation.");
             });
