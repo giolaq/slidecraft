@@ -19,7 +19,7 @@ import { render } from "./src/render.js";
 const server = new MCPServer({
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.4.0",
+  version: "1.4.1",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
@@ -27,6 +27,26 @@ const server = new MCPServer({
   websiteUrl: "https://github.com/giolaq/slidecraft",
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
 });
+// Read-only bearer-capability endpoint for panes whose host tool bridge is unavailable.
+server.app.use("/api/live-deck", async (c, next) => {
+  c.header("Access-Control-Allow-Origin", "*");
+  c.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+  c.header("Access-Control-Allow-Headers", "Authorization, Content-Type");
+  c.header("Cache-Control", "no-store");
+  if (c.req.method === "OPTIONS") return c.body(null, 204);
+  await next();
+});
+server.app.post("/api/live-deck", (c) => {
+  const token = c.req.header("Authorization")?.replace(/^Bearer /, "") ?? "";
+  if (!/^[a-f0-9]{64}$/.test(token))
+    return c.json({ error: "A live session token is required." }, 401);
+  try {
+    return c.json({ deck: latestDeck(token) });
+  } catch {
+    return c.json({ error: "Live sync is temporarily unavailable." }, 503);
+  }
+});
+
 const hints = {
   readOnlyHint: false,
   destructiveHint: false,

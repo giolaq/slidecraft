@@ -237,6 +237,16 @@ assert.equal(
     .deck,
   null,
 );
+const liveUrl = new URL("/api/live-deck", url);
+const unauthorized = await fetch(liveUrl, { method: "POST" });
+assert.equal(unauthorized.status, 401);
+const direct = await fetch(liveUrl, {
+  method: "POST",
+  headers: { Authorization: `Bearer ${liveInitial.syncToken}` },
+});
+assert.equal(direct.status, 200);
+assert.equal(direct.headers.get("cache-control"), "no-store");
+assert.equal((await direct.json()).deck.revision, 1);
 const inspected = await call("inspect-deck", { deck });
 assert.equal(inspected.structuredContent.slides.length, 7);
 const exported = await call("export-deck", { deck, format: "html" });

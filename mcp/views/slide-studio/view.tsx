@@ -216,6 +216,7 @@ export function Studio({
     deck: initial,
     selectedSlideId: initialSelectedSlideId ?? initial.slides[0].id,
   });
+  const [syncStatus, setSyncStatus] = useState("Connecting…");
   const signature = JSON.stringify(initial),
     previous = useRef(signature),
     mounted = useRef(false);
@@ -251,6 +252,7 @@ export function Studio({
       previous.current !== signature ||
       (!mounted.current &&
         (state.deck.id !== initial.id ||
+          (initial.syncToken && state.deck.syncToken !== initial.syncToken) ||
           state.deck.revision < initial.revision ||
           (state.deck.revision === initial.revision &&
             JSON.stringify(state.deck) !== signature)))
@@ -274,41 +276,99 @@ export function Studio({
   const liveCall = useRef(live.callTool);
   liveCall.current = live.callTool;
   useEffect(() => {
-    if (!deck.syncToken) return;
-    let cancelled = false;
+    if (!deck.syncToken) {
+      setSyncStatus("Not connected — reopen this deck in Slidecraft.");
+      return;
+    }
+    let cancelled = false,
+      inFlight = false;
     let timer: ReturnType<typeof setTimeout>;
     const token = deck.syncToken;
+    const controller = new AbortController();
     async function refresh() {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      clearTimeout(timer);
       try {
-        const response = await liveCall.current({ syncToken: token });
-        const latest = response.structuredContent.deck;
-        if (!cancelled && latest)
-          setState((current) => {
-            if (
-              current.deck.syncToken !== token ||
-              current.deck.revision >= latest.revision
-            )
-              return current;
-            return {
-              deck: latest,
-              selectedSlideId: latest.slides.some(
-                (s) => s.id === current.selectedSlideId,
-              )
-                ? current.selectedSlideId
-                : latest.slides[0].id,
-            };
-          });
+        let latest: Deck | null;
+        try {
+          const response = await fetch(
+            new URL(/* @vite-ignore */ "/api/live-deck", import.meta.url),
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              cache: "no-store",
+              signal: AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(5000),
+              ]),
+            },
+          );
+          if (!response.ok) throw new Error("Direct refresh unavailable");
+          const data = await response.json();
+          latest = data.deck === null ? null : checkDeck(data.deck);
+        } catch {
+          if (cancelled) return;
+          let deadline: ReturnType<typeof setTimeout>;
+          try {
+            const response = await Promise.race([
+              liveCall.current({ syncToken: token }),
+              new Promise<never>((_, reject) => {
+                deadline = setTimeout(
+                  () => reject(new Error("Refresh timed out")),
+                  5000,
+                );
+              }),
+            ]);
+            latest = response.structuredContent.deck;
+          } finally {
+            clearTimeout(deadline!);
+          }
+        }
+        if (cancelled) return;
+        if (!latest) {
+          setSyncStatus(
+            "Session expired — reopen the latest deck to reconnect.",
+          );
+          return;
+        }
+        if (latest.syncToken !== token) throw new Error("Session mismatch");
+        setState((current) =>
+          current.deck.syncToken !== token ||
+          current.deck.revision >= latest!.revision
+            ? current
+            : {
+                deck: latest!,
+                selectedSlideId: latest!.slides.some(
+                  (s) => s.id === current.selectedSlideId,
+                )
+                  ? current.selectedSlideId
+                  : latest!.slides[0].id,
+              },
+        );
+        setSyncStatus(`Live · server revision ${latest.revision}`);
       } catch {
-        /* Retry transient network/host failures without discarding edits. */
+        if (!cancelled)
+          setSyncStatus("Reconnecting… updates have not been confirmed.");
+      } finally {
+        inFlight = false;
+        if (!cancelled) timer = setTimeout(refresh, 2000);
       }
-      if (!cancelled) timer = setTimeout(refresh, 2000);
     }
     void refresh();
+    const wake = () => {
+      void refresh();
+    };
+    window.addEventListener("focus", wake);
+    document.addEventListener("visibilitychange", wake);
     return () => {
       cancelled = true;
+      controller.abort();
       clearTimeout(timer);
+      window.removeEventListener("focus", wake);
+      document.removeEventListener("visibilitychange", wake);
     };
-  }, [deck.syncToken, setState]);
+  }, [deck.syncToken, setState, displayMode]);
   useEffect(() => {
     setEditing(false);
     setDownload(null);
@@ -753,6 +813,9 @@ export function Studio({
           </form>
           <div className="sc-bottom">
             <span>Revision {deck.revision} · Saved in view state</span>
+            <span role="status" aria-label="Live connection status">
+              {syncStatus} · v1.4.1
+            </span>
             <label>
               <input
                 type="checkbox"

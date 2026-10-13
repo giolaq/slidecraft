@@ -37,6 +37,7 @@ if(m.method==='ui/notifications/initialized'){send({method:'ui/notifications/too
 if(m.id===undefined)return;
 try{let result={};
 if(m.method==='ui/initialize')result={protocolVersion:m.params.protocolVersion,hostInfo:{name:'Slidecraft test host',version:'1.0'},hostCapabilities:{serverTools:{},message:{text:{}},updateModelContext:{text:{},structuredContent:{}},openLinks:{}},hostContext:{theme:'dark',displayMode:'inline',availableDisplayModes:['inline','fullscreen'],platform:'web',locale:'en-US',timeZone:'UTC'}};
+if(m.method==='tools/call' && location.search==='?pane' && m.params.name==='get-live-deck')return;
 if(m.method==='tools/call')result=await(await fetch('/rpc',{method:'POST',body:JSON.stringify(m.params)})).json();
 if(m.method==='ui/update-model-context')window.latestContext=m.params;
 if(m.method==='ui/message')window.followUp=m.params;
@@ -76,6 +77,12 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const frame = page.frameLocator("iframe");
   await frame.locator(".sc-studio").waitFor();
+  const pane = await browser.newPage({
+    viewport: { width: 900, height: 1100 },
+  });
+  await pane.goto(`http://127.0.0.1:${server.address().port}/?pane`);
+  const paneFrame = pane.frameLocator("iframe");
+  await paneFrame.locator(".sc-studio").waitFor();
   const liveUpdate = await rpc("tools/call", {
     name: "revise-presentation",
     arguments: {
@@ -113,6 +120,20 @@ try {
       .evaluate((el) => getComputedStyle(el).backgroundColor),
     "rgb(255, 0, 0)",
   );
+  await paneFrame
+    .getByText("Revision 1 · Saved in view state", { exact: true })
+    .waitFor({ timeout: 15000 });
+  assert.equal(
+    await paneFrame
+      .locator(".sc-slide")
+      .evaluate((el) => getComputedStyle(el).backgroundColor),
+    "rgb(255, 0, 0)",
+  );
+  await paneFrame
+    .getByLabel("Live connection status")
+    .filter({ hasText: "Live · server revision 1" })
+    .waitFor();
+  await pane.close();
   const fresh = await rpc("tools/call", { name: "open-slides", arguments: {} });
   await page.evaluate(({ r, html }) => window.showPreview(r, html), {
     r: fresh,
@@ -415,7 +436,7 @@ try {
   assert.ok(box.width <= 390);
   assert.deepEqual(errors, []);
   console.log(
-    "Widget checks passed: existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
+    "Widget checks passed: separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
   );
 } finally {
   await browser.close();
