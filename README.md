@@ -100,3 +100,7 @@ The editor isolates previews in a sandbox; exported decks run as ordinary pages.
 Run `npm test` for validation, escaping, persistence, and HTTP integration tests.
 Run `npm run test:browser` for Chromium playback/editor/export checks (Chromium
 must be installed; set `CHROMIUM_PATH` if it is not `/usr/bin/chromium`).
+
+## MCP app for ChatGPT and other agents
+
+The [mcp](mcp/README.md) project contains the deployed MCP server, interactive studio, and presentation-authoring skill. It supports general atomic deck edits, per-slide styling, and an isolated HTML/CSS/JavaScript preview matching the export. Run `cd mcp && npm ci && npm run dev` to develop it.
