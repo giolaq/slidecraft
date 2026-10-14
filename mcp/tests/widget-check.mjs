@@ -458,6 +458,7 @@ try {
       .getByAltText("Visible test photo")
       .evaluate((img) => img.complete && img.naturalWidth > 0),
   );
+  await page.bringToFront();
   await frame.getByRole("button", { name: "Present", exact: true }).click();
   const presentation = frame.getByRole("dialog", {
     name: "Presentation",
@@ -469,6 +470,16 @@ try {
       .locator("html")
       .evaluate(() => Boolean(document.fullscreenElement)),
   );
+  const controls = presentation.getByRole("navigation", { name: "Presenter controls" });
+  await page.mouse.move(500, 400);
+  await page.waitForTimeout(2100);
+  assert.equal(await controls.evaluate((el) => getComputedStyle(el).opacity), "0");
+  await controls.hover();
+  await page.waitForTimeout(250);
+  assert.equal(await controls.evaluate((el) => getComputedStyle(el).opacity), "1");
+  await page.mouse.move(500, 400);
+  await page.waitForTimeout(2100);
+  assert.equal(await controls.evaluate((el) => getComputedStyle(el).opacity), "0");
   const audience = presentation.frameLocator("iframe");
   await audience.locator(".slide.active .slide-photo img").waitFor();
   assert.equal(await audience.locator("#notes-toggle").isVisible(), false);

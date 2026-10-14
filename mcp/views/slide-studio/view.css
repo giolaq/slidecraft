@@ -576,11 +576,11 @@ body {
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding-bottom: 66px;
+  outline: none;
   box-sizing: border-box;
 }
 .sc-present-stage {
-  width: min(100vw, calc((100dvh - 66px) * 16 / 9));
+  width: min(100vw, calc(100dvh * 16 / 9));
   max-width: 100%;
 }
 .sc-present-controls {
@@ -595,6 +595,13 @@ body {
   padding: 12px;
   background: #111;
   flex-wrap: wrap;
+  opacity: 0;
+  transition: opacity 180ms ease;
+}
+.sc-present-controls.sc-controls-visible,
+.sc-present-controls:has(:focus-visible),
+.sc-speaker .sc-present-controls {
+  opacity: 1;
 }
 .sc-speaker {
   display: grid;

@@ -20,7 +20,7 @@ import { render } from "./src/render.js";
 const server = new MCPServer({
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.5.0",
+  version: "1.5.1",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:

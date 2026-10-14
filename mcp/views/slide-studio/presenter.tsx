@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CodePreview } from "./code-preview.js";
 import type { Deck, Slide } from "./schema.js";
 export function Presenter({
@@ -12,6 +12,18 @@ export function Presenter({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    dialogRef.current?.focus();
+    return () => clearTimeout(hideControlsTimer.current);
+  }, []);
+  function revealControls() {
+    setControlsVisible(true);
+    clearTimeout(hideControlsTimer.current);
+    hideControlsTimer.current = setTimeout(() => setControlsVisible(false), 1800);
+  }
+  const [controlsVisible, setControlsVisible] = useState(false);
   const [speaker, setSpeaker] = useState(false);
   const [seconds, setSeconds] = useState(0);
   const index = deck.slides.findIndex((s) => s.id === slide.id);
@@ -27,6 +39,8 @@ export function Presenter({
   return (
     <section
       className={`sc-present ${speaker ? "sc-speaker" : ""}`}
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={speaker ? "Speaker view" : "Presentation"}
@@ -87,7 +101,13 @@ export function Presenter({
           )}
         </aside>
       )}
-      <nav className="sc-present-controls" aria-label="Presenter controls">
+      <nav
+        className={`sc-present-controls ${controlsVisible ? "sc-controls-visible" : ""}`}
+        aria-label="Presenter controls"
+        onPointerEnter={revealControls}
+        onPointerMove={revealControls}
+        onPointerLeave={() => setControlsVisible(false)}
+      >
         <button onClick={() => move(-1)} disabled={index === 0}>
           Previous slide
         </button>
@@ -100,7 +120,7 @@ export function Presenter({
         <button onClick={() => setSpeaker(!speaker)}>
           {speaker ? "Audience view" : "Speaker view"}
         </button>
-        <button autoFocus onClick={onClose}>
+        <button onClick={onClose}>
           Exit presentation
         </button>
       </nav>
