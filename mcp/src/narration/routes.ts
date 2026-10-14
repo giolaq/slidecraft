@@ -17,7 +17,10 @@ const esc = (s: string) =>
 export function registerNarrationRoutes(app: Hono) {
   app.use("/narration/*", async (c, next) => {
     c.header("Cache-Control", "no-store");
-    c.header("Referrer-Policy", "no-referrer");
+    // no-referrer makes browser form POSTs send Origin: null, failing the
+    // same-origin CSRF check. Settings URLs carry no capabilities; same-origin
+    // preserves their POST Origin while still hiding referrers from other sites.
+    c.header("Referrer-Policy", c.req.path === "/narration/settings" ? "same-origin" : "no-referrer");
     c.header("X-Content-Type-Options", "nosniff");
     c.header(
       "Content-Security-Policy",

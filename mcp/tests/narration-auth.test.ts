@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { Hono } from "hono";
+import { existsSync } from "node:fs";
+import { chromium } from "playwright-core";
 test("secure connection page verifies JWT identity, state, CSRF, ticket ownership and one-time consumption", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "slidecraft-auth-"));
   Object.assign(process.env, {
@@ -203,4 +205,45 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
   const response = await authenticated.text();
   assert.match(response, /structuredContent/);
   assert.ok(!response.includes("private-eleven-key"));
+
+  // Real browser form submission must preserve Origin; request-only fixtures
+  // cannot reproduce no-referrer's opaque Origin on navigation POSTs.
+  const chromiumPath = process.env.CHROMIUM_PATH ?? "/usr/bin/chromium";
+  await t.test("browser setup form preserves Origin and saves the connection", { skip: !existsSync(chromiumPath) }, async () => {
+    const browserFlow = await begin();
+    const browserCallback = await callback(browserFlow);
+    const browserCookie = browserCallback.headers.getSetCookie()
+      .find((value) => value.startsWith("sc_narration_session="))!
+      .split(";")[0]!;
+    const browser = await chromium.launch({
+      executablePath: chromiumPath,
+      args: ["--no-sandbox"],
+    });
+    try {
+      const context = await browser.newContext();
+      await context.addCookies([{
+        name: "sc_narration_session", value: browserCookie.slice(browserCookie.indexOf("=") + 1),
+        url: "https://slidecraft.example/narration/settings",
+        httpOnly: true, secure: true, sameSite: "Lax",
+      }]);
+      let submittedOrigin: string | undefined;
+      await context.route("https://slidecraft.example/narration/**", async (route) => {
+        const req = route.request();
+        if (req.method() === "POST") submittedOrigin = req.headers().origin;
+        const res = await app.fetch(new Request(req.url(), {
+          method: req.method(), headers: req.headers(),
+          ...(req.method() === "POST" ? { body: req.postData() } : {}),
+        }));
+        await route.fulfill({ status: res.status, headers: Object.fromEntries(res.headers), body: await res.text() });
+      });
+      const browserPage = await context.newPage();
+      await browserPage.goto("https://slidecraft.example/narration/settings");
+      await browserPage.locator('input[name="key"]').fill("private-eleven-key");
+      await Promise.all([browserPage.waitForNavigation(), browserPage.getByRole("button", { name: "Save connection" }).click()]);
+      assert.equal(submittedOrigin, "https://slidecraft.example");
+      assert.match(await browserPage.locator("body").innerText(), /Connected\. Close this tab/);
+    } finally {
+      await browser.close();
+    }
+  });
 });
