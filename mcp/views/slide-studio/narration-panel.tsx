@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCallTool, useOpenExternal, useSendFollowUp, useHostContext, useViewTool } from "mcp-use/react";
 import { z, type JSONType } from "zod";
 import type { Deck, Slide } from "./schema.js";
-import { narrationWritingPrompt } from "./narration-writing.js";
+import { narrationWritingPrompt, validateNarrationEmotion } from "./narration-writing.js";
 export type NarrationSlideStatus = {
   slideId: string;
   status: string;
@@ -79,8 +79,8 @@ export function NarrationPanel({
   useViewTool({
     name: "save-visible-narration",
     description: "Save an agent-written narration script into the open studio's narration field. After Write Narration, call this with the requested slideId and script; it persists the script and immediately fills the editor. Does not generate audio or spend credits. Preserves other slides and voice settings.",
-    inputSchema: z.object({ slideId: z.string(), script: z.string().trim().min(1).max(10000) }),
-  }, async ({ slideId, script }) => {
+    inputSchema: z.object({ slideId: z.string(), script: z.string().trim().min(1).max(10000), requireEmotionTags: z.boolean().default(false) }),
+  }, async ({ slideId, script, requireEmotionTags }) => {
     try {
       if (editor.current.slideId === slideId && editor.current.dirty)
         throw new Error("There are new unsaved narration edits. Ask the user to save or discard them before replacing the script.");
@@ -90,6 +90,7 @@ export function NarrationPanel({
         if (!response.structuredContent.deck) throw new Error("Live session expired. Reopen this presentation before writing narration.");
         current = response.structuredContent.deck;
       }
+      if (requireEmotionTags) validateNarrationEmotion(script, current.narration?.modelId ?? "eleven_multilingual_v2");
       const index = current.slides.findIndex(s => s.id === slideId);
       if (index < 0) throw new Error("The requested slide no longer exists.");
       const result = await revise.callTool({

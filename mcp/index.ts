@@ -1,3 +1,4 @@
+import { validateNarrationEmotion } from "./views/slide-studio/narration-writing.js";
 import {
   oauth,
   config as narrationConfig,
@@ -34,7 +35,7 @@ const narrationCsp = narrationConfig
 const serverOptions = {
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.9.3",
+  version: "1.9.4",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
@@ -380,17 +381,19 @@ export const saveNarrationScript = server.tool(
       slideId: z.string(),
       script: z.string().trim().min(1).max(10000),
       expectedScript: z.string().max(10000),
+      requireEmotionTags: z.boolean().default(false),
     }),
     outputSchema: deckResultSchema,
     annotations: hints,
   },
-  async ({ deck: reference, slideId, script, expectedScript }, ctx) => {
+  async ({ deck: reference, slideId, script, expectedScript, requireEmotionTags }, ctx) => {
     try {
       const current = latestDeck(reference.syncToken);
       if (!current || current.id !== reference.id)
         throw new Error("The live presentation is unavailable. Reopen the deck and use a fresh Write Narration request.");
       const index = current.slides.findIndex(s => s.id === slideId);
       if (index < 0) throw new Error("The requested slide no longer exists.");
+      if (requireEmotionTags) validateNarrationEmotion(script, current.narration?.modelId ?? "eleven_multilingual_v2");
       const existing = current.slides[index].narration;
       if ((existing?.script ?? "") !== expectedScript)
         throw new Error("This slide's script changed while narration was being written. Read the latest deck and ask before replacing those changes.");

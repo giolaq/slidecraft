@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { narrationWritingPrompt } from "../views/slide-studio/narration-writing.js";
+import { narrationWritingPrompt, validateNarrationEmotion } from "../views/slide-studio/narration-writing.js";
 
 test("writing targets one stable slide and never authorizes synthesis", () => {
   const prompt = narrationWritingPrompt("deck-a", "slide-b", "eleven_multilingual_v2");
@@ -26,4 +26,13 @@ test("expressive models get audio cues without unsupported SSML", () => {
   assert.ok(prompt.includes(JSON.stringify({id: "deck-a", syncToken: token})));
   assert.match(prompt, /expectedScript="Previous script"/);
   assert.match(prompt, /do not repeat it in your reply/);
+});
+
+test("required emotion cues reject tag-free or incompatible scripts", () => {
+  assert.throws(() => validateNarrationEmotion("Plain narration.", "eleven_v3"), /at least one/);
+  assert.throws(() => validateNarrationEmotion("[1] Plain narration.", "eleven_v4"), /at least one/);
+  assert.throws(() => validateNarrationEmotion("[curious] Hello.", "eleven_multilingual_v2"), /require Eleven/);
+  validateNarrationEmotion("[curious] What happens next?", "eleven_v3");
+  validateNarrationEmotion("[confident] Here is the plan.", "eleven_v4");
+  assert.match(narrationWritingPrompt("d", "s", "eleven_v3", "", "a".repeat(64)), /requireEmotionTags=true/);
 });

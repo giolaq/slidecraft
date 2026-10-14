@@ -305,6 +305,20 @@ try {
     .getByRole("button", { name: "Exit presentation", exact: true })
     .click();
   await f.locator(".sc-present").waitFor({ state: "detached" });
+  const liveForTags = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: initial.structuredContent.deck.syncToken}});
+  const taggedModel = await rpc("tools/call", {name: "revise-presentation", arguments: {
+    deck: liveForTags.structuredContent.deck, expectedRevision: liveForTags.structuredContent.deck.revision,
+    edits: [{op: "replace", path: "/narration/modelId", value: "eleven_v3"}]
+  }});
+  assert.ok(!taggedModel.isError);
+  const tagArgs = {deck: {id: initial.structuredContent.deck.id, syncToken: initial.structuredContent.deck.syncToken},
+    slideId: "one", expectedScript: "This is my independent narration script.", requireEmotionTags: true};
+  const rejectedPlain = await rpc("tools/call", {name: "save-narration-script", arguments: {...tagArgs, script: "A plain script without emotion tags."}});
+  assert.ok(rejectedPlain.isError);
+  const savedTags = await rpc("tools/call", {name: "save-narration-script", arguments: {...tagArgs, script: "[curious] What makes this idea work? [confident] Let us find out."}});
+  assert.ok(!savedTags.isError);
+  assert.match(savedTags.structuredContent.deck.slides[0].narration.script, /\[curious\]/);
+  assert.deepEqual(savedTags.structuredContent.deck.slides.slice(1), taggedModel.structuredContent.deck.slides.slice(1));
   assert.deepEqual(errors, []);
   console.log(
     "PASS narration widget: script/voice edits, explicit generation review, durable fixture jobs, real browser audio ended, silent slides, pause/resume, manual navigation, final stop and cleanup.",
