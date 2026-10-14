@@ -34,7 +34,7 @@ const narrationCsp = narrationConfig
 const serverOptions = {
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.9.1",
+  version: "1.9.2",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
@@ -366,6 +366,42 @@ export const revisePresentation = server.tool(
       );
     } catch (e) {
       return fail(e);
+    }
+  },
+);
+
+export const saveNarrationScript = server.tool(
+  {
+    name: "save-narration-script",
+    title: "Save narration into the slide studio",
+    description: "After Write Narration, save the written script into the selected slide's Narration script field. This server tool works even when widget tools are unavailable. Use the deck reference and expectedScript supplied by the writing request. Resolves the latest live deck, preserves every other field and slide, and rejects concurrent script changes. Never generates audio or spends credits. Do not merely print the script in chat: call this tool to save it.",
+    inputSchema: z.object({
+      deck: z.object({ id: z.string(), syncToken: z.string().regex(/^[a-f0-9]{64}$/) }),
+      slideId: z.string(),
+      script: z.string().trim().min(1).max(10000),
+      expectedScript: z.string().max(10000),
+    }),
+    outputSchema: deckResultSchema,
+    annotations: hints,
+  },
+  async ({ deck: reference, slideId, script, expectedScript }, ctx) => {
+    try {
+      const current = latestDeck(reference.syncToken);
+      if (!current || current.id !== reference.id)
+        throw new Error("The live presentation is unavailable. Reopen the deck and use a fresh Write Narration request.");
+      const index = current.slides.findIndex(s => s.id === slideId);
+      if (index < 0) throw new Error("The requested slide no longer exists.");
+      const existing = current.slides[index].narration;
+      if ((existing?.script ?? "") !== expectedScript)
+        throw new Error("This slide's script changed while narration was being written. Read the latest deck and ask before replacing those changes.");
+      const next = applyEdits(current, current.revision, [{
+        op: "add", path: `/slides/${index}/narration`, value: {
+          ...existing, mode: "speech", script, silentDurationMs: existing?.silentDurationMs ?? 5000,
+        },
+      }]);
+      return await result(next, "Narration script saved. The open studio will display it automatically.", slideId, false, ctx.auth);
+    } catch (error) {
+      return fail(error);
     }
   },
 );

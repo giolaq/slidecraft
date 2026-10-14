@@ -214,6 +214,7 @@ export function NarrationPanel({
       selectedSlideId: slide.id,
     });
     onDeck(r.structuredContent.deck);
+    latest.current = r.structuredContent.deck;
     setDirty(false);
     setReview(false);
     await statusTool.callTool({
@@ -444,7 +445,8 @@ export function NarrationPanel({
                     htmlText: slide.html?.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<[^>]*>/g, " "),
                     existingScript: slide.narration?.script,
                   }).slice(0, 16000);
-                  await followUp({ prompt: narrationWritingPrompt(deck.id, selectedId, modelId, source) });
+                  const saved = latest.current;
+                  await followUp({ prompt: narrationWritingPrompt(saved.id, selectedId, modelId, source, saved.syncToken, saved.slides.find(s => s.id === selectedId)?.narration?.script ?? "") });
                   setMessage("Asked your agent to write and save narration for this slide. The script updates here when it is ready.");
                 })}
               >

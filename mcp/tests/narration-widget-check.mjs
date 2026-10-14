@@ -212,6 +212,20 @@ try {
   assert.equal(generationCalls, 0);
   assert.match(request, /save-visible-narration/);
   assert.match(request, /Speaker notes stay separate/);
+  assert.match(request, /SERVER tool save-narration-script/);
+  // Real server-side save, as a host without mounted widget tools does.
+  const serverSaved = await rpc("tools/call", {name: "save-narration-script", arguments: {
+    deck: {id: initial.structuredContent.deck.id, syncToken: initial.structuredContent.deck.syncToken},
+    slideId: "one", script: "A narration saved through the server tool.", expectedScript: ""
+  }});
+  assert.ok(!serverSaved.isError);
+  await page.waitForFunction(() => document.querySelector("iframe").contentDocument?.querySelector('textarea[aria-label="Narration script"]')?.value === "A narration saved through the server tool.");
+  const conflict = await rpc("tools/call", {name: "save-narration-script", arguments: {
+    deck: {id: initial.structuredContent.deck.id, syncToken: initial.structuredContent.deck.syncToken},
+    slideId: "one", script: "Must not overwrite a newer script.", expectedScript: ""
+  }});
+  assert.ok(conflict.isError);
+  assert.equal(generationCalls, 0);
   // Invoke the actual mounted action as a host agent does; no synthetic tool-result notification.
   const before = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: initial.structuredContent.deck.syncToken}});
   await page.evaluate(() => document.querySelector("iframe").contentWindow.postMessage({

@@ -28,7 +28,7 @@ async function rpc(method, params = {}) {
 }
 const call = (name, args = {}) => rpc("tools/call", { name, arguments: args });
 const tools = await rpc("tools/list");
-assert.equal(tools.tools.length, 21);
+assert.equal(tools.tools.length, 22);
 const open = tools.tools.find((t) => t.name === "open-slides");
 assert.equal(open._meta["openai/ui"].entrypoints.length, 2);
 const initial = await call("open-slides");
@@ -294,5 +294,5 @@ assert.ok(JSON.stringify(skills).includes("slidecraft"));
 await writeFile("/tmp/slidecraft-mcp-initial.json", JSON.stringify(initial));
 await writeFile("/tmp/slidecraft-mcp-resource.json", JSON.stringify(resource));
 console.log(
-  `MCP checks passed at ${url}: 21 tools, entrypoints, create, revise, move, inspect, errors, exports, view resource, skill discovery.`,
+  `MCP checks passed at ${url}: 22 tools, entrypoints, create, revise, move, inspect, errors, exports, view resource, skill discovery.`,
 );

@@ -18,3 +18,12 @@ test("expressive models get audio cues without unsupported SSML", () => {
   }
   assert.match(narrationWritingPrompt("d", "s", "unknown"), /Use plain spoken text/);
 });
+
+ test("server writing request carries an explicit deck reference and protects concurrent scripts", () => {
+  const token = "a".repeat(64);
+  const prompt = narrationWritingPrompt("deck-a", "slide-b", "eleven_v3", "Slide context", token, "Previous script");
+  assert.match(prompt, /SERVER tool save-narration-script/);
+  assert.ok(prompt.includes(JSON.stringify({id: "deck-a", syncToken: token})));
+  assert.match(prompt, /expectedScript="Previous script"/);
+  assert.match(prompt, /do not repeat it in your reply/);
+});

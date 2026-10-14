@@ -22,9 +22,9 @@ const init = await result(await request("initialize", {
   protocolVersion: "2025-03-26", capabilities: {},
   clientInfo: { name: "discovery-regression", version: "1" },
 }));
-assert.equal(init.serverInfo.version, "1.9.1");
+assert.equal(init.serverInfo.version, "1.9.2");
 const { tools } = await result(await request("tools/list"));
-assert.equal(tools.length, 21);
+assert.equal(tools.length, 22);
 for (const name of ["open-slides", "create-deck", "update-slide", "begin-narration-connection"])
   assert.ok(tools.some((tool) => tool.name === name), `Missing ${name}`);
 for (const tool of tools) {
