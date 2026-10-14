@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=22.22.2"
   },
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Animated presentation authoring for ChatGPT and MCP clients",
   "author": "Giovanni Laquidara",
   "license": "MIT",
@@ -24,15 +24,20 @@
     "start": "mcp-use start",
     "deploy": "mcp-use deploy",
     "typecheck": "mcp-use typecheck",
-    "test": "node --experimental-strip-types --test tests/core.test.ts",
+    "test": "tsx --test tests/*.test.ts",
     "test:mcp": "node tests/mcp-check.mjs",
     "test:widget": "node tests/widget-check.mjs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1151.0",
     "dompurify": "^3.4.17",
     "fast-json-patch": "^3.1.1",
+    "hono": "^4.13.13",
     "ipaddr.js": "^2.5.0",
+    "jose": "^6.2.12",
     "mcp-use": "2.8.2",
+    "music-metadata": "^12.2.0",
+    "pg": "^8.23.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "sharp": "^0.35.5",
@@ -41,9 +46,11 @@
   "devDependencies": {
     "@mcp-use/client": "^2.4.2",
     "@types/node": "^22.20.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "playwright-core": "^1.64.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }
 }

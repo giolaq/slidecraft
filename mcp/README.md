@@ -131,3 +131,17 @@ Image uploads adapt both encoding quality and dimensions to the embedded-image l
 Dragging an item or selection shows pink guide lines and snaps its edges or center to nearby items and the slide. Hold Alt to bypass snapping, or turn off **Snap to guides**. Shift-click (also Cmd/Ctrl-click) toggles items in the selection. Dragging or nudging a selection preserves its relative positions. Click the blank canvas to clear selection.
 
 With multiple items selected, alignment controls align them within their combined bounds. With at least three, **Distribute horizontally/vertically** creates equal gaps while keeping the outside items fixed; spread overlapping items farther apart first if there is insufficient space. A single selected item retains the slide-edge alignment controls. Guides are editor-only and are not exported. Save visual edits publishes the final positions to the shared deck.
+
+## ElevenLabs narration (v1.8)
+
+Open **Narration** to edit a separate script per slide or mark a slide silent.
+Connect your own ElevenLabs account, select a voice/model, save, then review and
+confirm generation. Once every slide is ready, **Present → Auto present** plays
+narration and advances on audio completion. Manual navigation pauses it; the
+presenter supports pause/resume, replay, volume and speaker view.
+
+Narration requires authenticated users, PostgreSQL and private S3-compatible
+storage. It is disabled by default and does not change the existing deployed
+server until configured. See [deployment and test instructions](docs/elevenlabs-setup.md).
+Generated audio stays outside deck JSON. Narration-enabled decks have durable
+per-user recovery through `list-narrated-decks` / `reopen-narrated-deck`.

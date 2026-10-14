@@ -738,3 +738,10 @@ body {
   right: 0;
   border-top: 2px dashed #ff4ed1;
 }
+.sc-narration { margin: 16px 0; padding: 12px; border: 1px solid #80808055; border-radius: 12px; }
+.sc-narration label { display: block; margin: 12px 0; }
+.sc-narration textarea { width: 100%; box-sizing: border-box; }
+.sc-narration select { max-width: 100%; margin-left: 8px; }
+.sc-narration button { margin: 4px; }
+.sc-narration audio { display: block; width: 100%; margin: 12px 0; }
+.sc-audio-alert { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 5; background: #111827; color: white; padding: 12px; border-radius: 8px; }

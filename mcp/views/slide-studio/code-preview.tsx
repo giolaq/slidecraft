@@ -10,6 +10,7 @@ export function CodePreview({
   onSelect,
   audience = false,
   onExit,
+  onReady,
 }: {
   deck: Deck;
   slide: Slide;
@@ -17,13 +18,16 @@ export function CodePreview({
   onSelect: (id: string) => void;
   audience?: boolean;
   onExit?: () => void;
+  onReady?: (id: string) => void;
 }) {
+  const navigationRequest = useRef("");
   const frame = useRef<HTMLIFrameElement>(null);
   const source = useMemo(() => {
     if (!audience) return render(deck);
     return render({
       ...deck,
-      slides: deck.slides.map(({ notes, ...s }) => s),
+      narration: undefined,
+      slides: deck.slides.map(({ notes, narration, ...s }) => s),
     }).replace(
       "</head>",
       '<style>.controls,#notes,#progress{display:none!important}</style><script>document.addEventListener("keydown",e=>{if(e.key==="Escape")parent.postMessage({type:"slidecraft:exit"},"*")})</script></head>',
@@ -33,9 +37,19 @@ export function CodePreview({
     const listener = (event: MessageEvent) => {
       if (
         event.source !== frame.current?.contentWindow ||
-        !["slidecraft:slide", "slidecraft:exit"].includes(event.data?.type)
+        !["slidecraft:slide", "slidecraft:exit", "slidecraft:ready"].includes(
+          event.data?.type,
+        )
       )
         return;
+      if (event.data.type === "slidecraft:ready") {
+        if (
+          event.data.requestId === navigationRequest.current &&
+          event.data.id === slide.id
+        )
+          onReady?.(slide.id);
+        return;
+      }
       if (event.data.type === "slidecraft:exit") {
         onExit?.();
         return;
@@ -45,10 +59,15 @@ export function CodePreview({
     };
     window.addEventListener("message", listener);
     return () => window.removeEventListener("message", listener);
-  }, [deck, onSelect, onExit]);
+  }, [deck, slide.id, onSelect, onExit, onReady]);
   function navigate() {
+    navigationRequest.current = crypto.randomUUID();
     frame.current?.contentWindow?.postMessage(
-      { type: "slidecraft:go", id: slide.id },
+      {
+        type: "slidecraft:go",
+        id: slide.id,
+        requestId: navigationRequest.current,
+      },
       "*",
     );
   }
