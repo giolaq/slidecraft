@@ -1,6 +1,20 @@
 import { parseBuffer } from "music-metadata";
 import { FORMAT } from "./model.js";
 import type { Deck } from "../../views/slide-studio/schema.js";
+// Only recognized machine codes may leave the provider boundary. Upstream
+// messages and unknown values may contain credentials or account information.
+const safeErrorCodes = new Set([
+  "invalid_api_key", "invalid_api_key_type", "invalid_authorization_header",
+  "needs_authorization", "missing_permissions", "missing_permission",
+  "insufficient_permissions", "invalid_parameters", "invalid_parameter",
+  "invalid_request", "invalid_request_body", "validation_error",
+  "invalid_page_size", "invalid_next_page_token", "invalid_pagination_token",
+  "workspace_not_found", "invalid_workspace", "invalid_service_account",
+  "quota_exceeded", "rate_limit_exceeded", "too_many_concurrent_requests",
+  "system_busy", "detected_unusual_activity", "unusual_activity",
+  "ip_not_allowed", "ip_address_not_allowed", "unsupported_region",
+  "wrong_region", "data_residency_error", "voice_not_found", "model_not_found",
+]);
 export class ProviderError extends Error {
   constructor(
     message: string,
@@ -50,18 +64,25 @@ export class ElevenLabs implements Provider {
       );
     }
     if (!response.ok) {
-      // Never expose provider bodies: they may echo scripts or account details.
       const status = response.status;
+      const detail = await response.json().catch(() => null) as { detail?: { status?: unknown } } | null;
+      const code = typeof detail?.detail?.status === "string" && safeErrorCodes.has(detail.detail.status)
+        ? detail.detail.status : undefined;
+      const operation = body ? "speech generation" : path.startsWith("/v2/voices") ? "voice listing" : "model listing";
+      const diagnostic = `ElevenLabs ${operation} failed (HTTP ${status}${code ? `; ${code}` : ""}).`;
+      const permissions = code === "missing_permissions" || code === "missing_permission" || code === "insufficient_permissions";
       throw new ProviderError(
         status === 429
-          ? "ElevenLabs rate limit or credit limit reached."
-          : status === 401 || status === 403
+          ? diagnostic + " Rate limit or credit limit reached."
+          : status === 401 || status === 403 || permissions
             ? body
-              ? "ElevenLabs rejected the key. Enable Text to Speech access or reconnect with a valid restricted key."
+              ? diagnostic + " Enable Text to Speech access or reconnect with a valid restricted key."
               : path.startsWith("/v2/voices")
-                ? "ElevenLabs rejected the key while listing voices. Enable Voices read access and check that the key is valid."
-                : "ElevenLabs rejected the key while listing models. Enable Models read access and check that the key is valid."
-            : `ElevenLabs request failed (${status}).`,
+                ? diagnostic + " Enable Voices read access and check that the key is valid."
+                : diagnostic + " Enable Models read access and check that the key is valid."
+            : code === "workspace_not_found" || code === "invalid_workspace"
+              ? diagnostic + " Create the key in the ElevenLabs workspace you want to use."
+              : diagnostic,
         status === 429,
         !(!body || status < 500),
       );

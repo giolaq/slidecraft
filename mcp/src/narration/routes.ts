@@ -202,7 +202,7 @@ export function registerNarrationRoutes(app: Hono) {
         if (error instanceof ProviderError && validatedSession) {
           // Only our fixed provider messages are exposed, never upstream bodies
           // or the submitted key. Failed validation does not consume the ticket.
-          console.error("Narration connection failed: provider validation.");
+          console.error("Narration connection failed: " + error.message);
           return c.html(page(`<p role="alert">${esc(error.message)}</p>` + connectionForm(validatedSession)), 400);
         }
         const message = error instanceof ConnectionLinkError

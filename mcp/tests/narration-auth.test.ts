@@ -35,7 +35,9 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
     audience = process.env.AUTH0_AUDIENCE!,
     providerCalls = 0,
     rejectVoiceKey = false,
-    rejectModelKey = false;
+    rejectModelKey = false,
+    badVoiceRequest = false,
+    unknownVoiceCode = false;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -53,6 +55,7 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
       return Response.json({ keys: [jwk] });
     if (url.startsWith("https://api.elevenlabs.io/v2/voices")) {
       providerCalls++;
+      if (badVoiceRequest) return Response.json({ detail: { status: unknownVoiceCode ? "private-eleven-key" : "missing_permissions", message: "private-eleven-key upstream detail" } }, { status: 400 });
       if (rejectVoiceKey) return Response.json({ detail: "private-eleven-key upstream detail" }, { status: 401 });
       return Response.json({ voices: [], has_more: false });
     }
@@ -149,10 +152,23 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
   assert.match(modelMessage, /Models read access/);
   assert.ok(!modelMessage.includes("private-eleven-key"));
   rejectModelKey = false;
+  badVoiceRequest = true;
+  const badRequest = await post("https://slidecraft.example", csrf);
+  assert.equal(badRequest.status, 400);
+  const badMessage = await badRequest.text();
+  assert.match(badMessage, /voice listing failed \(HTTP 400; missing_permissions\)/);
+  assert.match(badMessage, /Voices read access/);
+  assert.ok(!badMessage.includes("private-eleven-key"));
+  unknownVoiceCode = true;
+  const unknownFailure = await post("https://slidecraft.example", csrf);
+  const unknownMessage = await unknownFailure.text();
+  assert.match(unknownMessage, /voice listing failed \(HTTP 400\)/);
+  assert.ok(!unknownMessage.includes("private-eleven-key"));
+  badVoiceRequest = false;
   assert.equal((await post("https://slidecraft.example", csrf)).status, 200);
   assert.equal(await service.connected(owner), true);
   assert.equal((await post("https://slidecraft.example", csrf)).status, 400);
-  assert.equal(providerCalls, 3);
+  assert.equal(providerCalls, 5);
   assert.ok(
     !(await readFile(dir + "/state.json", "utf8")).includes(
       "private-eleven-key",
