@@ -34,4 +34,14 @@ test("voice catalog follows cursors with the default page size and validates fal
   await assert.rejects(provider.catalog("fixture-key"), (error) =>
     error instanceof ProviderError && error.httpStatus === 401 && error.code === "invalid_api_key");
   assert.deepEqual(requests, ["/v2/voices", "/v1/voices"]);
+  globalThis.fetch = async () => Response.json({
+    detail: { code: "request_version_rejected", message: "fixture-key private details" },
+  }, { status: 400 });
+  await assert.rejects(provider.catalog("fixture-key"), (error) =>
+    error instanceof ProviderError && error.code === "request_version_rejected" && !error.message.includes("fixture-key"));
+  globalThis.fetch = async () => new Response("Bad request: fixture-key private details", {
+    status: 400, headers: { "Content-Type": "text/plain" },
+  });
+  await assert.rejects(provider.catalog("fixture-key"), (error) =>
+    error instanceof ProviderError && error.message.includes("non-JSON response") && !error.message.includes("fixture-key"));
 });

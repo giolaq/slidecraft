@@ -2,7 +2,7 @@ import { oauthAuth0Provider } from "mcp-use/oauth/auth0";
 import { FileStore, PostgresStore } from "./store.js";
 import { FileAssets, S3Assets } from "./assets.js";
 import { Vault } from "./crypto.js";
-import { ElevenLabs } from "./provider.js";
+import { ElevenLabs, diagnoseElevenLabsNetwork } from "./provider.js";
 import { NarrationService } from "./service.js";
 const required = (key: string) => {
   const v = process.env[key];
@@ -54,6 +54,8 @@ function createService() {
 // but do not open database connections or start background jobs during discovery.
 export const narration =
   enabled && process.env.SLIDECRAFT_BUILD_ONLY !== "true" ? createService() : null;
+if (narration && process.env.NARRATION_PROVIDER_DIAGNOSTICS === "true")
+  void diagnoseElevenLabsNetwork();
 export function requireNarration() {
   if (!narration)
     throw new Error(

@@ -15,6 +15,49 @@ const safeErrorCodes = new Set([
   "ip_not_allowed", "ip_address_not_allowed", "unsupported_region",
   "wrong_region", "data_residency_error", "voice_not_found", "model_not_found",
 ]);
+function errorCode(value: unknown, key: string): string | undefined {
+  if (typeof value !== "string") return;
+  if (safeErrorCodes.has(value)) return value;
+  // Permit only bounded machine identifiers, never messages, credential-shaped
+  // values, or any part of the supplied key. This covers new provider codes.
+  if (value.length <= 64 && /^[a-z]+(?:_[a-z]+)+$/.test(value) &&
+      !/^(sk|pk|rk|key|secret|token|user|workspace|account)_/.test(value) &&
+      !key.toLowerCase().includes(value)) return value;
+}
+function responseCode(data: unknown, key: string): string | undefined {
+  if (!data || typeof data !== "object") return;
+  const d = data as { detail?: { status?: unknown; code?: unknown } | string; code?: unknown; error?: { code?: unknown } };
+  const detail = typeof d.detail === "object" ? d.detail : undefined;
+  return errorCode(detail?.status ?? detail?.code ?? d.error?.code ?? d.code ?? d.detail, key);
+}
+function responseKind(response: Response): string {
+  const type = response.headers.get("content-type") ?? "";
+  return type.includes("json") ? "JSON" : type.includes("html") ? "HTML" : "non-JSON";
+}
+// Opt-in startup check: no real credentials, no paid endpoints, no raw bodies.
+export async function diagnoseElevenLabsNetwork() {
+  console.info("ElevenLabs network diagnostic: " + JSON.stringify({
+    httpsProxyConfigured: !!(process.env.HTTPS_PROXY || process.env.https_proxy),
+    httpProxyConfigured: !!(process.env.HTTP_PROXY || process.env.http_proxy),
+    nodeEnvProxyEnabled: process.env.NODE_USE_ENV_PROXY === "1",
+  }));
+  for (const explicitHeaders of [false, true]) {
+    try {
+      const key = "slidecraft-diagnostic-invalid-key";
+      const response = await fetch("https://api.elevenlabs.io/v2/voices", {
+        headers: { "xi-api-key": key, ...(explicitHeaders ? { Accept: "application/json", "User-Agent": "Slidecraft/diagnostic" } : {}) },
+        signal: AbortSignal.timeout(15000),
+      });
+      const kind = responseKind(response);
+      const data = await response.json().catch(() => null);
+      console.info("ElevenLabs network diagnostic: " + JSON.stringify({
+        explicitHeaders, status: response.status, kind, code: responseCode(data, key) ?? "unclassified",
+      }));
+    } catch {
+      console.info("ElevenLabs network diagnostic: request unreachable.");
+    }
+  }
+}
 export class ProviderError extends Error {
   constructor(
     message: string,
@@ -67,12 +110,12 @@ export class ElevenLabs implements Provider {
     }
     if (!response.ok) {
       const status = response.status;
-      const detail = await response.json().catch(() => null) as { detail?: { status?: unknown } } | null;
-      const code = typeof detail?.detail?.status === "string" && safeErrorCodes.has(detail.detail.status)
-        ? detail.detail.status : undefined;
+      const kind = responseKind(response);
+      const detail: unknown = await response.json().catch(() => null);
+      const code = responseCode(detail, key);
       const isVoices = /^\/v[12]\/voices(?:[/?]|$)/.test(path);
       const operation = body ? "speech generation" : isVoices ? "voice listing" : "model listing";
-      const diagnostic = `ElevenLabs ${operation} failed (HTTP ${status}${code ? `; ${code}` : ""}).`;
+      const diagnostic = `ElevenLabs ${operation} failed (HTTP ${status}${code ? `; ${code}` : kind !== "JSON" ? `; ${kind} response` : ""}).`;
       const permissions = code === "missing_permissions" || code === "missing_permission" || code === "insufficient_permissions";
       throw new ProviderError(
         status === 429
