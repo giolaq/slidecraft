@@ -1,10 +1,21 @@
 # Slidecraft
 
-A local presentation tool and companion agent skill. Describe a deck to your
+A local presentation tool, companion agent skill, and MCP app for ChatGPT. Describe a deck to your
 agent, inspect it in your browser, and refine individual slides through
 conversation or direct editing. Output is HTML/CSS/JavaScript with animation.
 
-**Requires Node.js 22+ and a modern browser. No dependencies or API keys.**
+## Choose how to use Slidecraft
+
+| Version | Start here | Requirements |
+| --- | --- | --- |
+| Local browser tool and agent skill | Follow the local quick start below | Node.js 22+ and a modern browser; no dependencies or API keys |
+| ChatGPT / MCP app | [MCP installation and configuration](mcp/README.md#deploy-to-manufact-cloud) | Node.js 22.22.2+, npm dependencies, and an HTTPS deployment |
+| Narrated auto-presentation in the MCP app | [Complete narration setup](mcp/README.md#configure-elevenlabs-narration) | Auth0, PostgreSQL (for example Neon), private S3 storage (for example Cloudflare R2), and each user's ElevenLabs secret API key |
+
+The local tool and MCP app are separate projects. The narration setup below
+applies to the MCP app in `mcp/`, not the local server on port 4310.
+
+## Local quick start
 
 ```bash
 cd slidecraft
@@ -62,8 +73,9 @@ node bin/slidecraft.js render decks/my-talk.deck.json --out dist/my-talk.html
 
 Open the exported file directly. Built-in styles and scripts are embedded;
 external media you add remain external. Browser Print → Save as PDF creates a
-static copy. PPTX, video export, built-in voice chat, and cloud hosting are not
-part of this version. Notes are embedded in HTML exports.
+static copy. PPTX, video export, and built-in voice chat are not
+part of the local tool. Use the MCP app for cloud hosting and ElevenLabs narration.
+Notes are embedded in the local tool's HTML exports.
 
 ## Focused edits and history
 
@@ -104,3 +116,36 @@ must be installed; set `CHROMIUM_PATH` if it is not `/usr/bin/chromium`).
 ## MCP app for ChatGPT and other agents
 
 The [mcp](mcp/README.md) project contains the deployed MCP server, interactive studio, and presentation-authoring skill. It supports general atomic deck edits, per-slide styling, and an isolated HTML/CSS/JavaScript preview matching the export. Run `cd mcp && npm ci && npm run dev` to develop it.
+
+To configure your own hosted MCP app:
+
+1. Deploy `mcp/` to Manufact Cloud with narration disabled, and record its HTTPS origin and `/mcp` URL.
+2. Create a Neon PostgreSQL database and private Cloudflare R2 bucket (or equivalent PostgreSQL/S3 services).
+3. Create the Auth0 API and web application, configure client registration and login connections, and add all deployment variables and secrets.
+4. Enable narration and redeploy the same server.
+5. Add the server in [ChatGPT Plugins](https://chatgpt.com/plugins) as a custom MCP server using OAuth with automatic registration. Install/select Slidecraft in a new chat and complete sign-in.
+
+The [MCP README](mcp/README.md#configure-elevenlabs-narration) contains the complete
+variable table, callback URLs, Auth0 permissions, Neon/R2 setup, and deployment
+commands. The [operator guide](mcp/docs/elevenlabs-setup.md) covers storage,
+workers, security, and verification. Each deployment uses its own configuration;
+do not copy someone else's credentials or encryption key.
+
+### Generate narration and present
+
+1. Open a deck, expand **Narration**, and click **Connect ElevenLabs**. Sign in with the same Auth0 account and enter your ElevenLabs **secret API key value** on the external page.
+2. Give the key **Voices read**, **Models read**, and **Text to Speech** access. The key ID shown in the key list is not the secret. If the secret is no longer visible, create a new key and copy the secret when it is shown.
+3. Wait for **Connected**, return to Slidecraft, click **Load voices**, and choose a voice and model.
+4. For every slide, write a **Narration script** (or use **Copy slide text / Copy speaker notes**) and click **Save narration**. Alternatively, choose **Silent slide**, set a dwell time, and save.
+5. Click **Generate narration… → Confirm and generate**. This uses your ElevenLabs credits. Wait until every slide is ready, then test **Preview audio**.
+6. Click **Present → Auto present from beginning**. The voice narrates each slide and advances when its audio ends. If playback is blocked, click **Resume audio**. Manual navigation or switching tabs pauses narration.
+
+**0 characters** in the review means scripts are empty. **Generate narration…**
+requires a connected account and saved voice/script settings; unsaved drafts
+disable it. **Confirm and generate** additionally requires scripts or silent mode
+for every included slide and at least one recording needing work. Auto-present
+appears only when every slide is ready or silent. After changing a script or
+voice, generate the affected recordings again.
+
+For common errors, including `api_key_id_used_as_api_key`, expired setup links,
+missing tools, and disabled generation, see [troubleshooting](mcp/README.md#narration-troubleshooting).

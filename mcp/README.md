@@ -30,8 +30,21 @@ npm run dev
 | `set-theme` | Change background, text, and highlight colors with a fresh preview |
 | `revise-presentation` | Atomic edits to any deck field, nested content, HTML/CSS/JS, duplication, deletion, and redesign |
 | `edit-deck` | Add, remove, move, or change deck title/theme |
+| `add-photo` | Optimize and embed an image in a slide |
+| `get-live-deck` | Read the latest shared live-session snapshot |
 | `inspect-deck` | Read structure, notes, word counts, and density warnings |
 | `export-deck` | Generate HTML or editable JSON; download through the widget |
+| `get-narration-status` | Read account connection and per-slide recording readiness |
+| `begin-narration-connection` | Create the secure external ElevenLabs setup link |
+| `disconnect-narration` | Disconnect the provider account; saved audio remains available |
+| `list-narration-voices` | Load the connected account's voices and speech models |
+| `generate-narration` | Queue explicitly confirmed audio generation |
+| `get-narration-job` | Read durable generation progress |
+| `cancel-narration-job` | Cancel work not yet submitted |
+| `get-narration-playback` | Obtain an owner-authorized, short-lived audio link |
+| `list-narrated-decks` | List the user's durable narration deck snapshots |
+| `reopen-narrated-deck` | Recover a saved narration deck after a restart |
+| `delete-narration` | Delete deck narration or the user's narration account data |
 
 Use `plan-presentation` for a starting brief. The `skills/slidecraft` catalog
 teaches agents how to plan, critique, revise, and export without inventing facts.
@@ -55,8 +68,9 @@ HTML excludes notes unless the user enables them.
 
 Custom HTML/SVG, CSS, and JavaScript render in an isolated iframe using the same renderer as the HTML export. Authored code cannot access the studio document or host bridge; the sandbox allows scripts but not same-origin access. Host CSP may restrict external resources.
 Built-in animations respect reduced-motion settings. External assets remain
-external unless embedded. No AI API key or external AI service is required:
-the connected host agent authors and revises the deck.
+external unless embedded. Deck authoring requires no separate AI API key:
+the connected host agent authors and revises the deck. Optional ElevenLabs
+narration requires the per-user provider connection described below.
 
 Downloads use host file APIs where available, with browser download and visible
 file-content fallbacks. Actual ChatGPT file uploads, fullscreen, follow-up
@@ -65,11 +79,17 @@ messages, and launcher availability depend on the host version and permissions.
 ## ChatGPT app / plugin
 
 The server advertises a view resource and global/thread entrypoints on
-`open-slides`. Once deployed, connect its HTTPS `/mcp` URL in your MCP-enabled
-ChatGPT workspace's app/connector settings (developer mode where required).
-Open Slidecraft or ask it to create a presentation. No legacy plugin manifest
-is required for this MCP App. Connecting a custom app is separate from publishing
-it in a public app directory; this project does not perform directory submission.
+`open-slides`. To install an existing deployment from scratch:
+
+1. Open [ChatGPT Plugins](https://chatgpt.com/plugins), select **+ → Add custom MCP server**, and name it **Slidecraft**. In interfaces that still use Apps/Connectors settings, use the equivalent custom MCP connection flow; enable developer mode if required by your account/workspace.
+2. Enter the deployment's HTTPS MCP URL, including `/mcp`, such as `https://your-server.run.mcp-use.com/mcp`.
+3. Choose **OAuth** with **Automatic / Dynamic Client Registration** when narration is enabled. Leave client ID/secret blank for automatic registration. The Auth0 web application's secret belongs on the server, not in this ChatGPT form. With narration disabled, the basic editor uses no authentication.
+4. Accept the connection warning, select **Create as a plugin**, and complete Auth0 sign-in when prompted. An existing Auth0 session can sign in without showing another login screen.
+5. Install/enable the resulting plugin, start a new chat, and select **Slidecraft** using `@` (or the app picker). Ask: “Use Slidecraft to create a three-slide presentation.”
+6. After server authentication or metadata changes, open the connection and select **Refresh**, complete any sign-in, and test in a new conversation.
+
+Connecting a custom app is separate from publishing it in a public directory;
+this project does not perform directory submission.
 
 ## Verification
 
@@ -93,12 +113,21 @@ npx -y mcp-use@latest login
 # Managed private source repository:
 npx -y mcp-use@latest deploy --no-github -y
 # Or use your own GitHub origin, with the mcp-use GitHub App installed:
-npx -y mcp-use@latest deploy -y
+# From the repository root (one directory above mcp/):
+npx -y mcp-use@latest deploy --root-dir mcp -y
 ```
 
 The CLI stores the project link under ignored `.mcp-use/cloud/`. Keep credentials
 and `.env` files out of source control. The deployment output supplies the server
 and dashboard URLs. The dashboard provides logs, analytics, and evaluation tools.
+
+Run the managed-upload command from `mcp/`; it uploads that project. For your own
+GitHub source, push the repository first and install the
+[mcp-use GitHub App](https://github.com/apps/mcp-use/installations/new) in the
+account/organization that owns it. Select `mcp` as the repository's source root
+with `--root-dir mcp`. Use the same deployment mode and working directory on
+subsequent deploys so the CLI reuses its saved server link. Keep the initial
+deployment's narration disabled until the following setup is complete.
 
 Single-slide colors: call `set-theme` with `slideId` and a partial `colors` palette. The returned preview selects that slide automatically. Per-slide `colors` override the deck palette in both preview and HTML. The mounted color tool defaults to the selected slide; use `scope: "deck"` for presentation-wide changes.
 
@@ -132,16 +161,172 @@ Dragging an item or selection shows pink guide lines and snaps its edges or cent
 
 With multiple items selected, alignment controls align them within their combined bounds. With at least three, **Distribute horizontally/vertically** creates equal gaps while keeping the outside items fixed; spread overlapping items farther apart first if there is insufficient space. A single selected item retains the slide-edge alignment controls. Guides are editor-only and are not exported. Save visual edits publishes the final positions to the shared deck.
 
-## ElevenLabs narration (v1.8)
+## Configure ElevenLabs narration
 
-Open **Narration** to edit a separate script per slide or mark a slide silent.
-Connect your own ElevenLabs account, select a voice/model, save, then review and
-confirm generation. Once every slide is ready, **Present → Auto present** plays
-narration and advances on audio completion. Manual navigation pauses it; the
-presenter supports pause/resume, replay, volume and speaker view.
+Narration is optional and disabled by default. The basic editor works without
+an ElevenLabs key. To enable narration for your own deployment, configure Auth0,
+PostgreSQL, and private S3-compatible storage. Each user then connects their own
+ElevenLabs key through the external account page.
 
-Narration requires authenticated users, PostgreSQL and private S3-compatible
-storage. It is disabled by default and does not change the existing deployed
-server until configured. See [deployment and test instructions](docs/elevenlabs-setup.md).
-Generated audio stays outside deck JSON. Narration-enabled decks have durable
-per-user recovery through `list-narrated-decks` / `reopen-narrated-deck`.
+### 1. Deploy once to obtain the public URLs
+
+Install dependencies in `mcp/`, log in to Manufact, and deploy using one of the
+[deployment modes above](#deploy-to-manufact-cloud). Leave `NARRATION_ENABLED`
+unset or `false` for this first deployment.
+
+Record the server origin (for example `https://your-server.run.mcp-use.com`),
+its MCP URL (the origin plus `/mcp`), and the Manufact dashboard URL. All URLs
+below must use your own origin. Configure variables in the server's Manufact
+environment settings for **production**, using the **Secret** option where
+marked below. Do not commit a populated environment file.
+
+### 2. Create the database and audio bucket
+
+**Neon / PostgreSQL:** Create a Neon project/database (or use another managed
+PostgreSQL service). Copy its PostgreSQL connection string with the provider's
+TLS parameters into the secret `DATABASE_URL`. The database user must be able to
+create the `slidecraft_narration` table; Slidecraft initializes it automatically.
+See the [operator guide](docs/elevenlabs-setup.md) for the schema and worker behavior.
+
+**Cloudflare R2 / S3:** Create a private R2 bucket, such as `slidecraft-narration`.
+Create an R2 API token with **Object Read & Write** access restricted to that
+bucket. Copy the generated **Access Key ID** and **Secret Access Key** into
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`. These are the S3 credentials
+shown when the R2 token is created, not the generic Cloudflare API-token value.
+Copy the bucket's S3 API endpoint, normally
+`https://<ACCOUNT_ID>.r2.cloudflarestorage.com`, into `NARRATION_S3_ENDPOINT`,
+set `NARRATION_S3_BUCKET` to the bucket name, and set `AWS_REGION=auto`.
+Keep public bucket access disabled.
+
+For AWS S3, omit the endpoint, use the actual AWS region, and give the service
+PutObject/GetObject/DeleteObject access on the bucket's `narration/` prefix.
+An IAM credential chain can replace explicit AWS credential variables.
+
+### 3. Configure Auth0
+
+1. Create an Auth0 tenant and an API named **Slidecraft**. Its **Identifier** must match your canonical MCP URL exactly, including `/mcp`. Use **RS256** signing.
+2. Create a **Regular Web Application** named **Slidecraft Settings**. Set its **Allowed Callback URLs** to `https://your-server.run.mcp-use.com/narration/callback`. Save its domain, client ID, and client secret in the variables below.
+3. In tenant **Settings → Advanced**, enable **Dynamic Client Registration (DCR)** for automatic MCP client registration.
+4. In **Applications → APIs → Slidecraft → Settings → Default Permissions for Third Party Apps**, authorize **User-Delegated Access**. Slidecraft currently defines no custom required API scopes. This flow uses end-user login; machine-to-machine authorization does not replace it.
+5. In **Authentication → your connection type → your login connection**, enable **Promote Connection to Domain Level** so dynamically registered clients can use it. Also enable the connection for **Slidecraft Settings**.
+6. In the API's **Application Access**, authorize **Slidecraft Settings** for user-delegated access if it is not already authorized.
+
+Auth0 console labels can vary. If a client omits Auth0's `audience` parameter,
+a dedicated Slidecraft tenant can set **Default Audience** to the MCP URL.
+For a shared tenant, check how that tenant-wide change affects other applications
+before changing it. Your MCP client registration and the **Slidecraft Settings**
+web application are separate OAuth clients.
+
+### 4. Save deployment variables and secrets
+
+| Variable | Secret? | Value / purpose |
+| --- | --- | --- |
+| `NARRATION_ENABLED` | No | Keep `false` during setup; set `true` once all entries below are saved |
+| `NARRATION_PUBLIC_URL` | No | Server HTTPS origin, without `/mcp` or trailing slash |
+| `AUTH0_DOMAIN` | No | Your Auth0 tenant domain, such as `your-tenant.us.auth0.com` |
+| `AUTH0_AUDIENCE` | No | The Auth0 API identifier: your complete HTTPS `/mcp` URL |
+| `AUTH0_CLIENT_ID` | No | Client ID of **Slidecraft Settings** |
+| `AUTH0_CLIENT_SECRET` | **Yes** | Client secret of **Slidecraft Settings** |
+| `NARRATION_ENCRYPTION_KEY` | **Yes** | 32 random bytes encoded as base64; generate once and keep stable |
+| `DATABASE_URL` | **Yes** | PostgreSQL connection string with required TLS options |
+| `NARRATION_S3_BUCKET` | No | Private audio bucket name |
+| `NARRATION_S3_ENDPOINT` | No | R2/S3-compatible HTTPS endpoint; omit for AWS S3 |
+| `AWS_REGION` | No | `auto` for R2; your bucket's AWS region for S3 |
+| `AWS_ACCESS_KEY_ID` | **Yes** | Generated R2/S3 Access Key ID, unless using deployment IAM credentials |
+| `AWS_SECRET_ACCESS_KEY` | **Yes** | Generated R2/S3 Secret Access Key, unless using deployment IAM credentials |
+
+Generate the encryption key in your own secure terminal with:
+
+```bash
+openssl rand -base64 32
+```
+
+Save the output directly as a Manufact secret and keep a secure backup. Reuse it
+on every deployment: changing it makes existing encrypted ElevenLabs connections
+and media grants unreadable. Do not add a shared `ELEVENLABS_API_KEY` to the
+server environment; provider credentials are per user.
+
+Optional `NARRATION_PROVIDER_DIAGNOSTICS=true` enables a one-time startup
+connectivity check using a deliberately invalid test key. It logs only safe
+response metadata and performs no speech generation. Leave it unset/`false`
+normally, and turn it off after troubleshooting.
+
+### 5. Enable narration and redeploy
+
+Set `NARRATION_ENABLED=true` and redeploy the **same linked server** using the
+original mode/working directory. For a managed upload, from `mcp/`:
+
+```bash
+npx -y mcp-use@latest deploy --no-github -y
+```
+
+For a GitHub deployment, push changes and use the original
+`deploy --root-dir mcp -y` command from the repository root. Do not use `--new`
+when updating an existing deployment. Wait until Manufact shows **running** and
+the new deployment serves production traffic. Use the supplied MCP and dashboard
+URLs to connect clients and inspect logs.
+
+Use `npm run build` for production builds: its build-only flag prevents background
+workers/database connections during view discovery. Do not set
+`SLIDECRAFT_BUILD_ONLY` in the runtime environment. Keep at least one instance
+running so durable narration jobs can progress.
+
+Install or refresh the ChatGPT connection following
+[ChatGPT app / plugin](#chatgpt-app--plugin). With narration enabled, clients can
+discover the tools before login, but every tool invocation requires verified OAuth.
+
+### 6. Connect each user's ElevenLabs account
+
+1. Open a deck and expand **Narration → Connect ElevenLabs**.
+2. On the external page, sign in with the **same Auth0 account** used for the ChatGPT connection.
+3. In [ElevenLabs API-key settings](https://elevenlabs.io/app/settings/api-keys), create a restricted key with **Voices read**, **Models read**, and **Text to Speech** access, plus a suitable credit limit.
+4. Copy the **secret API key value**, not the **key ID** shown in the key list. The secret may be shown only when you create the key; create a new key if you cannot retrieve it. Paste it only into Slidecraft's external connection form, never into chat or deck JSON.
+5. Submit within 10 minutes and wait for **Connected. Close this tab…**. Then return to Slidecraft, reopen the Narration panel if needed, wait for connection status to update, and click **Load voices**.
+
+The current integration uses the standard `https://api.elevenlabs.io` endpoint;
+per-user data-residency endpoints are not currently configurable.
+
+## Generate narration and auto-present
+
+1. Choose a **Voice** and **Model** in the Narration panel.
+2. For each slide, enter its separate **Narration script**, or click **Copy speaker notes / Copy slide text**. Click **Save narration** before leaving the slide. Speaker notes and visible slide text are not used as narration automatically.
+3. For slides without speech, select **Silent slide**, set its **Dwell time (seconds)**, and save.
+4. Click **Generate narration…**. Review the voice, model, slides, and character count, then select **Confirm and generate**. This submits paid requests to your ElevenLabs account; matching recordings are reused.
+5. Wait until every slide is **ready** or **silent** and the ready counter matches the slide count. Use **Preview audio** to check a recording and your output volume before the presentation.
+6. Click **Present**, reveal the bottom controls, and choose **Auto present from beginning** or **Auto present from here**. Narration advances on audio completion; silent slides advance after their dwell time. The final slide remains on screen.
+7. If the browser blocks playback, click **Resume audio**. Manual slide navigation and hiding/switching away from the presentation pause narration. Use pause/resume, replay, and volume controls as needed. Controls hide when idle.
+
+After changing scripts, voice, or model/settings, save and generate any affected
+recordings before starting auto-present. Presentation uses a snapshot taken when
+it opens; exit and reopen Present after further deck edits. **Speaker view** shows
+notes, the narration script, and current/next slides; it currently shares the
+presentation window, so keep it off the audience display.
+
+Try asking an agent: “Write and save a narration script for every slide in this
+deck. Let me review them before generating audio.” Script writing and paid audio
+generation are separate actions.
+
+## Narration troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| `api_key_id_used_as_api_key` | Paste the secret API key value, not its ID. If the secret is no longer visible, create a new restricted key and copy the secret when shown. |
+| `invalid_api_key` / rejected key | Check that the secret is current, copied in full, and belongs to the intended ElevenLabs account. Enter it only on the external form. |
+| `missing_permissions` | Enable Voices read, Models read, and Text to Speech access on that key. The error identifies which request failed. |
+| Connection session expired or invalid | Close old setup tabs, open a fresh Connect link, and submit within 10 minutes. Use a current release; v1.8.3 fixed a browser form-origin/referrer-policy bug. |
+| HTTP 400 without a useful reason | Read the current error's operation, safe code, and response format. v1.8.6 expands safe diagnostics; do not assume every 400 means the key expired. Operators can temporarily enable the startup connectivity diagnostic and inspect logs. |
+| ChatGPT could not connect the account | Inspect Auth0 Monitoring → Logs. Check DCR, user-delegated API access, domain-level login connections, callback URLs, and API audience. A successful code exchange alone does not prove the entire connection completed. |
+| Creation tools unavailable in a session | Refresh the custom MCP connection, complete OAuth, select/install Slidecraft, and use a new chat. v1.8.1 permits catalog discovery before login. |
+| Review shows **0 characters** / “Write scripts or mark these slides silent” | Add and save scripts, or mark the included slides silent and save. Notes/slide text must be explicitly copied to the script. |
+| **Generate narration…** disabled | Ensure account status is connected, voice settings are saved, and no script/settings draft is unsaved. Wait for any busy operation to finish. |
+| **Confirm and generate** disabled | Every included speech slide needs a saved script, and at least one included recording must need work. If all audio is already current, generation is unnecessary. |
+| Auto-present buttons absent | Every slide in the presentation must be ready or silent. Save/generate changed recordings, then reopen Present. |
+| Audio does not start | Use Preview audio, check tab/system mute and volume, and click Resume audio if autoplay was blocked. Keep the presentation visible. |
+| Job marked `uncertain` | Check ElevenLabs usage before explicitly retrying; an interrupted request may already have been charged. |
+
+Generated audio stays outside deck JSON and is served through owner-authorized,
+short-lived links. JSON retains scripts/settings; HTML export remains silent.
+Narration-enabled decks have durable per-user recovery through
+`list-narrated-decks` / `reopen-narrated-deck`. Regular live editing still uses the
+existing single-instance, 24-hour session storage. See the
+[operator and verification guide](docs/elevenlabs-setup.md) for production details.
