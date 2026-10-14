@@ -563,6 +563,87 @@ try {
   await page.bringToFront();
   await frame.getByRole("button", { name: "Visual edit", exact: true }).click();
   const visual = frame.getByRole("region", { name: "Visual slide editor" });
+  for (const [name, x, y] of [
+    ["Guide A", 100, 600],
+    ["Guide B", 400, 660],
+    ["Guide C", 900, 720],
+  ]) {
+    await visual.getByRole("button", { name: "Add text", exact: true }).click();
+    await visual.getByLabel("Element text", { exact: true }).fill(name);
+    for (const [field, value] of [
+      ["width", 100],
+      ["height", 80],
+      ["x", x],
+      ["y", y],
+    ])
+      await visual
+        .getByLabel(`Element ${field}`, { exact: true })
+        .fill(String(value));
+  }
+  const guideB = visual.getByRole("button", {
+    name: "Select text: Guide B",
+    exact: true,
+  });
+  await guideB.scrollIntoViewIfNeeded();
+  let dragBox = await guideB.boundingBox();
+  const visualScale = dragBox.width / 100;
+  await page.mouse.move(dragBox.x + 10, dragBox.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(dragBox.x + 10 - 197 * visualScale, dragBox.y + 10, {
+    steps: 5,
+  });
+  await visual
+    .locator('[data-guide-axis="x"][data-guide-value="200"]')
+    .waitFor();
+  assert.equal(await guideB.evaluate((el) => parseFloat(el.style.left)), 200);
+  await page.mouse.up();
+  assert.equal(await visual.locator(".sc-snap-guide").count(), 0);
+  dragBox = await guideB.boundingBox();
+  await page.keyboard.down("Alt");
+  await page.mouse.move(dragBox.x + 10, dragBox.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(dragBox.x + 10 + 3 * visualScale, dragBox.y + 10);
+  assert.equal(await visual.locator(".sc-snap-guide").count(), 0);
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  assert.ok(
+    Math.abs((await guideB.evaluate((el) => parseFloat(el.style.left))) - 203) <
+      1,
+  );
+  await visual
+    .getByRole("button", { name: "Select text: Guide A", exact: true })
+    .click();
+  await guideB.click({ modifiers: ["Shift"] });
+  await visual.getByRole("button", { name: "Align top", exact: true }).click();
+  assert.equal(await guideB.evaluate((el) => parseFloat(el.style.top)), 600);
+  await visual
+    .getByRole("button", { name: "Select text: Guide C", exact: true })
+    .click({ modifiers: ["Shift"] });
+  await visual
+    .getByRole("button", { name: "Distribute horizontally", exact: true })
+    .click();
+  assert.equal(await guideB.evaluate((el) => parseFloat(el.style.left)), 500);
+  const guideA = visual.getByRole("button", {
+    name: "Select text: Guide A",
+    exact: true,
+  });
+  const guideC = visual.getByRole("button", {
+    name: "Select text: Guide C",
+    exact: true,
+  });
+  await guideA.scrollIntoViewIfNeeded();
+  const groupBox = await guideA.boundingBox();
+  await page.mouse.move(groupBox.x + 10, groupBox.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(groupBox.x + 40, groupBox.y + 20, { steps: 5 });
+  await page.mouse.up();
+  const guideAX = await guideA.evaluate((el) => parseFloat(el.style.left));
+  const guideBX = await guideB.evaluate((el) => parseFloat(el.style.left));
+  const guideCX = await guideC.evaluate((el) => parseFloat(el.style.left));
+  assert.ok(guideAX > 100);
+  assert.ok(Math.abs(guideBX - guideAX - 400) < 0.01);
+  assert.ok(Math.abs(guideCX - guideBX - 400) < 0.01);
+
   await visual.getByRole("button", { name: "Add text", exact: true }).click();
   await visual
     .getByLabel("Element text", { exact: true })
@@ -608,10 +689,52 @@ try {
     await movable.evaluate((el) => getComputedStyle(el).textAlign),
     "center",
   );
+  // Emulate Safari silently returning PNG for unsupported WebP encoding.
+  await frame.locator("html").evaluate(() => {
+    window.originalCanvasEncoder = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function (type, quality) {
+      return window.originalCanvasEncoder.call(
+        this,
+        type === "image/webp" ? "image/png" : type,
+        quality,
+      );
+    };
+  });
+  const noise = Buffer.alloc(700 * 700 * 4);
+  let seed = 123456;
+  for (let i = 0; i < noise.length; i++) {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    noise[i] = i % 4 === 3 ? 255 : seed & 255;
+  }
+  const opaqueNoise = await sharp(noise, {
+    raw: { width: 700, height: 700, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+  await visual.getByLabel("Upload slide image").setInputFiles({
+    name: "opaque-photo.png",
+    mimeType: "image/png",
+    buffer: opaqueNoise,
+  });
+  await visual
+    .getByRole("button", {
+      name: "Select image: opaque-photo.png",
+      exact: true,
+    })
+    .waitFor();
+  for (let i = 3; i < noise.length; i += 4)
+    noise[i] = 80 + (noise[i - 1] % 160);
+  const transparentNoise = await sharp(noise, {
+    raw: { width: 700, height: 700, channels: 4 },
+  })
+    .png()
+    .toBuffer();
   await visual.getByLabel("Upload slide image").setInputFiles({
     name: "visual-photo.png",
     mimeType: "image/png",
-    buffer: imageBytes,
+    buffer: transparentNoise,
   });
   await visual
     .getByRole("button", { name: "Save visual edits", exact: true })
@@ -626,6 +749,9 @@ try {
     .getByRole("button", { name: "Save visual edits", exact: true })
     .click();
   await visual.waitFor({ state: "hidden" });
+  await frame.locator("html").evaluate(() => {
+    HTMLCanvasElement.prototype.toDataURL = window.originalCanvasEncoder;
+  });
   const visualPreview = frame.locator(".sc-canvas").frameLocator("iframe");
   await visualPreview
     .getByText("Visually authored text", { exact: true })
@@ -646,6 +772,23 @@ try {
     arguments: { syncToken: plainPhoto.structuredContent.deck.syncToken },
   });
   const visualDeck = visualLive.structuredContent.deck;
+  const transparentUpload = visualDeck.slides[0].elements.find(
+    (el) => el.text === "visual-photo.png",
+  );
+  const opaqueUpload = visualDeck.slides[0].elements.find(
+    (el) => el.text === "opaque-photo.png",
+  );
+  assert.ok(transparentUpload.src.startsWith("data:image/png;base64,"));
+  assert.ok(opaqueUpload.src.startsWith("data:image/jpeg;base64,"));
+  for (const upload of [transparentUpload, opaqueUpload])
+    assert.ok(upload.src.length <= 180000);
+  const transparentMeta = await sharp(
+    Buffer.from(transparentUpload.src.split(",")[1], "base64"),
+  ).metadata();
+  assert.ok(transparentMeta.hasAlpha);
+  assert.ok(transparentMeta.width < 450);
+
+  assert.ok(Math.abs(visualDeck.slides[0].elements.find((el) => el.text === "Guide B").x - guideBX) < 0.01);
   const authored = visualDeck.slides[0].elements.find(
     (el) => el.text === "Visually authored text",
   );

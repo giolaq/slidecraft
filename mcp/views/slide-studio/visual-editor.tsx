@@ -1,3 +1,12 @@
+import {
+  bounds,
+  snapMove,
+  alignItems,
+  distributeItems,
+  type Guide,
+  type Alignment,
+} from "./alignment.js";
+import { readImage } from "./image-import.js";
 import { useEffect, useRef, useState } from "react";
 import type { Deck, Slide, SlideElement } from "./schema.js";
 
@@ -68,34 +77,6 @@ function fromSlide(slide: Slide, color: string): SlideElement[] {
   if (slide.footer) elements.push(text(slide.footer, 80, 830, 1440, 40, 20));
   return elements;
 }
-async function readImage(file: File): Promise<string> {
-  if (
-    !/^image\/(png|jpeg|webp|gif)$/.test(file.type) ||
-    file.size > 8 * 1024 * 1024
-  )
-    throw new Error("Choose a PNG, JPEG, WebP or GIF under 8 MB.");
-  const bitmap = await createImageBitmap(file);
-  try {
-    if (bitmap.width * bitmap.height > 40_000_000)
-      throw new Error("Choose an image under 40 megapixels.");
-    for (const width of [1400, 1000, 700, 450]) {
-      const canvas = document.createElement("canvas"),
-        ratio = Math.min(1, width / bitmap.width, width / bitmap.height);
-      canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
-      canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
-      canvas
-        .getContext("2d")!
-        .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const src = canvas.toDataURL("image/webp", 0.75);
-      if (src.length <= 180000) return src;
-    }
-    throw new Error(
-      "Image is too large after compression. Choose a smaller image.",
-    );
-  } finally {
-    bitmap.close();
-  }
-}
 export function VisualEditor({
   deck,
   slide,
@@ -126,6 +107,11 @@ export function VisualEditor({
       (deck.theme.mode === "light" ? "#f2f1e9" : "#151816"),
   });
   const [selected, setSelected] = useState<string | undefined>(elements[0]?.id);
+  const [selection, setSelection] = useState<string[]>(
+    elements[0] ? [elements[0].id] : [],
+  );
+  const [guides, setGuides] = useState<Guide[]>([]);
+  const [snapping, setSnapping] = useState(true);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const viewport = useRef<HTMLDivElement>(null),
@@ -137,6 +123,8 @@ export function VisualEditor({
     py: number;
     element: SlideElement;
     resize: boolean;
+    items: SlideElement[];
+    others: SlideElement[];
   } | null>(null);
   const current = elements.find((el) => el.id === selected);
   useEffect(() => {
@@ -159,9 +147,18 @@ export function VisualEditor({
       }),
     );
   }
+  function distribute(axis: "x" | "y") {
+    try {
+      setElements(distributeItems(elements, selection, axis));
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
   function add(element: SlideElement) {
     setElements((all) => [...all, element]);
     setSelected(element.id);
+    setSelection([element.id]);
   }
   return (
     <section className="sc-visual" aria-label="Visual slide editor">
@@ -268,13 +265,31 @@ export function VisualEditor({
         </p>
       )}
       <p>
-        Drag an element to move it. Drag its corner to resize. Select text to
-        edit it below.
+        Drag to snap to item edges and centers. Shift-click to select multiple
+        items. Hold Alt while dragging to bypass snapping.
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          checked={snapping}
+          onChange={(e) => setSnapping(e.target.checked)}
+        />{" "}
+        Snap to guides
+      </label>
+      <p role="status" aria-label="Selection count">
+        {selection.length} selected
       </p>
       {error && <p role="alert">{error}</p>}
       <div ref={viewport} className="sc-visual-viewport">
         <div
           className="sc-visual-canvas"
+          onPointerDown={(e) => {
+            if (e.target === e.currentTarget) {
+              setSelection([]);
+              setSelected(undefined);
+              setGuides([]);
+            }
+          }}
           style={{
             transform: `scale(${scale})`,
             background: colors.background,
@@ -286,8 +301,8 @@ export function VisualEditor({
               role="button"
               tabIndex={0}
               aria-label={`Select ${el.type}: ${(el.text || "Image").slice(0, 80)}`}
-              aria-pressed={selected === el.id}
-              className={`sc-visual-element ${selected === el.id ? "selected" : ""}`}
+              aria-pressed={selection.includes(el.id)}
+              className={`sc-visual-element ${selection.includes(el.id) ? "selected" : ""}`}
               style={{
                 left: el.x,
                 top: el.y,
@@ -298,7 +313,10 @@ export function VisualEditor({
                 textAlign: el.textAlign || "left",
                 fontWeight: el.bold ? 700 : 400,
               }}
-              onFocus={() => setSelected(el.id)}
+              onFocus={() => {
+                setSelected(el.id);
+                if (!selection.includes(el.id)) setSelection([el.id]);
+              }}
               onKeyDown={(e) => {
                 if (
                   ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(
@@ -308,36 +326,60 @@ export function VisualEditor({
                   e.preventDefault();
                   e.stopPropagation();
                   const step = e.shiftKey ? 10 : 1;
-                  patch({
-                    x:
-                      el.x +
-                      (e.key === "ArrowRight"
-                        ? step
-                        : e.key === "ArrowLeft"
-                          ? -step
-                          : 0),
-                    y:
-                      el.y +
-                      (e.key === "ArrowDown"
-                        ? step
-                        : e.key === "ArrowUp"
-                          ? -step
-                          : 0),
-                  });
+                  const items = elements.filter((item) =>
+                    selection.includes(item.id),
+                  );
+                  const move = snapMove(
+                    bounds(items.length ? items : [el]),
+                    e.key === "ArrowRight"
+                      ? step
+                      : e.key === "ArrowLeft"
+                        ? -step
+                        : 0,
+                    e.key === "ArrowDown"
+                      ? step
+                      : e.key === "ArrowUp"
+                        ? -step
+                        : 0,
+                    [],
+                    0,
+                    false,
+                  );
+                  setElements((all) =>
+                    all.map((item) =>
+                      selection.includes(item.id)
+                        ? { ...item, x: item.x + move.dx, y: item.y + move.dy }
+                        : item,
+                    ),
+                  );
                 }
               }}
               onPointerDown={(e) => {
                 if (busy) return;
                 e.preventDefault();
-                setSelected(el.id);
+                const ids =
+                  e.shiftKey || e.metaKey || e.ctrlKey
+                    ? selection.includes(el.id)
+                      ? selection.filter((id) => id !== el.id)
+                      : [...selection, el.id]
+                    : selection.includes(el.id)
+                      ? selection
+                      : [el.id];
                 e.currentTarget.focus();
+                setSelection(ids);
+                setSelected(ids.includes(el.id) ? el.id : ids[ids.length - 1]);
+                if (e.shiftKey || e.metaKey || e.ctrlKey) return;
                 e.currentTarget.setPointerCapture(e.pointerId);
                 drag.current = {
                   id: el.id,
                   px: e.clientX,
                   py: e.clientY,
                   element: el,
-                  resize: (e.target as HTMLElement).dataset.resize === "true",
+                  resize:
+                    ids.length === 1 &&
+                    (e.target as HTMLElement).dataset.resize === "true",
+                  items: elements.filter((item) => ids.includes(item.id)),
+                  others: elements.filter((item) => !ids.includes(item.id)),
                 };
               }}
               onPointerMove={(e) => {
@@ -345,32 +387,67 @@ export function VisualEditor({
                 if (!d || d.id !== el.id) return;
                 const dx = (e.clientX - d.px) / scale,
                   dy = (e.clientY - d.py) / scale;
-                const changes = d.resize
-                  ? {
-                      width: Math.max(
-                        20,
-                        Math.min(1600 - d.element.x, d.element.width + dx),
-                      ),
-                      height: Math.max(
-                        20,
-                        Math.min(900 - d.element.y, d.element.height + dy),
-                      ),
-                    }
-                  : {
-                      x: clamp(d.element.x + dx, 1600 - el.width),
-                      y: clamp(d.element.y + dy, 900 - el.height),
-                    };
+                if (d.resize) {
+                  setElements((all) =>
+                    all.map((item) =>
+                      item.id === d.id
+                        ? {
+                            ...item,
+                            width: Math.max(
+                              20,
+                              Math.min(
+                                1600 - d.element.x,
+                                d.element.width + dx,
+                              ),
+                            ),
+                            height: Math.max(
+                              20,
+                              Math.min(
+                                900 - d.element.y,
+                                d.element.height + dy,
+                              ),
+                            ),
+                          }
+                        : item,
+                    ),
+                  );
+                  return;
+                }
+                const move = snapMove(
+                  bounds(d.items),
+                  dx,
+                  dy,
+                  d.others,
+                  6 / scale,
+                  snapping && !e.altKey,
+                );
+                setGuides(move.guides);
                 setElements((all) =>
-                  all.map((item) =>
-                    item.id === d.id ? { ...item, ...changes } : item,
-                  ),
+                  all.map((item) => {
+                    const original = d.items.find(
+                      (entry) => entry.id === item.id,
+                    );
+                    return original
+                      ? {
+                          ...item,
+                          x: original.x + move.dx,
+                          y: original.y + move.dy,
+                        }
+                      : item;
+                  }),
                 );
               }}
               onPointerUp={() => {
                 drag.current = null;
+                setGuides([]);
+              }}
+              onLostPointerCapture={() => {
+                drag.current = null;
+                setGuides([]);
               }}
               onPointerCancel={() => {
                 drag.current = null;
+                setGuides([]);
               }}
             >
               {el.type === "image" ? (
@@ -383,14 +460,75 @@ export function VisualEditor({
               ) : (
                 el.text
               )}
-              {selected === el.id && (
+              {selection.length === 1 && selected === el.id && (
                 <span data-resize="true" className="sc-resize-handle" />
               )}
             </div>
           ))}
+          {guides.map((guide) => (
+            <div
+              key={guide.axis}
+              data-guide-axis={guide.axis}
+              data-guide-value={guide.value}
+              aria-hidden="true"
+              className={`sc-snap-guide sc-snap-${guide.axis}`}
+              style={
+                guide.axis === "x"
+                  ? { left: guide.value }
+                  : { top: guide.value }
+              }
+            />
+          ))}
         </div>
       </div>
-      {current && (
+      {selection.length > 1 && (
+        <fieldset disabled={busy} className="sc-element-properties">
+          <legend>Align selected items relative to each other</legend>
+          {(
+            [
+              ["left", "Align left"],
+              ["center", "Center horizontally"],
+              ["right", "Align right"],
+              ["top", "Align top"],
+              ["middle", "Center vertically"],
+              ["bottom", "Align bottom"],
+            ] as [Alignment, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              onClick={() =>
+                setElements((all) => alignItems(all, selection, value))
+              }
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            disabled={selection.length < 3}
+            onClick={() => distribute("x")}
+          >
+            Distribute horizontally
+          </button>
+          <button
+            disabled={selection.length < 3}
+            onClick={() => distribute("y")}
+          >
+            Distribute vertically
+          </button>
+          <button
+            onClick={() => {
+              setElements((all) =>
+                all.filter((el) => !selection.includes(el.id)),
+              );
+              setSelection([]);
+              setSelected(undefined);
+            }}
+          >
+            Delete selected items
+          </button>
+        </fieldset>
+      )}
+      {current && selection.length === 1 && (
         <fieldset disabled={busy} className="sc-element-properties">
           <legend>Selected {current.type}</legend>
           <div
@@ -528,6 +666,7 @@ export function VisualEditor({
             onClick={() => {
               setElements((all) => all.filter((el) => el.id !== selected));
               setSelected(undefined);
+              setSelection([]);
             }}
           >
             Delete element
