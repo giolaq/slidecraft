@@ -50,7 +50,10 @@ function createService() {
       );
   return new NarrationService(store, assets, new ElevenLabs(), vault);
 }
-export const narration = enabled ? createService() : null;
+// The build imports this module to discover views. Keep OAuth/CSP configuration,
+// but do not open database connections or start background jobs during discovery.
+export const narration =
+  enabled && process.env.SLIDECRAFT_BUILD_ONLY !== "true" ? createService() : null;
 export function requireNarration() {
   if (!narration)
     throw new Error(
