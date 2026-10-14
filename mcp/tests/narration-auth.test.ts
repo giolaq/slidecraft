@@ -31,7 +31,9 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
   Object.assign(jwk, { kid: "test", alg: "RS256", use: "sig" });
   let subject = "alice",
     audience = process.env.AUTH0_AUDIENCE!,
-    providerCalls = 0;
+    providerCalls = 0,
+    rejectVoiceKey = false,
+    rejectModelKey = false;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -49,9 +51,11 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
       return Response.json({ keys: [jwk] });
     if (url.startsWith("https://api.elevenlabs.io/v2/voices")) {
       providerCalls++;
+      if (rejectVoiceKey) return Response.json({ detail: "private-eleven-key upstream detail" }, { status: 401 });
       return Response.json({ voices: [], has_more: false });
     }
-    if (url === "https://api.elevenlabs.io/v1/models") return Response.json([]);
+    if (url === "https://api.elevenlabs.io/v1/models")
+      return rejectModelKey ? Response.json({ detail: "private-eleven-key upstream detail" }, { status: 403 }) : Response.json([]);
     throw new Error("Unexpected fixture request");
   };
   t.after(async () => {
@@ -127,10 +131,26 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
   assert.equal((await post("https://evil.example", csrf)).status, 400);
   assert.equal((await post("https://slidecraft.example", "wrong")).status, 400);
   assert.equal(providerCalls, 0);
+  rejectVoiceKey = true;
+  const voiceFailure = await post("https://slidecraft.example", csrf);
+  assert.equal(voiceFailure.status, 400);
+  const voiceMessage = await voiceFailure.text();
+  assert.match(voiceMessage, /Voices read access/);
+  assert.match(voiceMessage, /<form/);
+  assert.ok(!voiceMessage.includes("private-eleven-key"));
+  assert.equal(await service.connected(owner), false);
+  rejectVoiceKey = false;
+  rejectModelKey = true;
+  const modelFailure = await post("https://slidecraft.example", csrf);
+  assert.equal(modelFailure.status, 400);
+  const modelMessage = await modelFailure.text();
+  assert.match(modelMessage, /Models read access/);
+  assert.ok(!modelMessage.includes("private-eleven-key"));
+  rejectModelKey = false;
   assert.equal((await post("https://slidecraft.example", csrf)).status, 200);
   assert.equal(await service.connected(owner), true);
   assert.equal((await post("https://slidecraft.example", csrf)).status, 400);
-  assert.equal(providerCalls, 1);
+  assert.equal(providerCalls, 3);
   assert.ok(
     !(await readFile(dir + "/state.json", "utf8")).includes(
       "private-eleven-key",

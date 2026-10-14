@@ -56,7 +56,11 @@ export class ElevenLabs implements Provider {
         status === 429
           ? "ElevenLabs rate limit or credit limit reached."
           : status === 401 || status === 403
-            ? "Reconnect ElevenLabs with a valid restricted key."
+            ? body
+              ? "ElevenLabs rejected the key. Enable Text to Speech access or reconnect with a valid restricted key."
+              : path.startsWith("/v2/voices")
+                ? "ElevenLabs rejected the key while listing voices. Enable Voices read access and check that the key is valid."
+                : "ElevenLabs rejected the key while listing models. Enable Models read access and check that the key is valid."
             : `ElevenLabs request failed (${status}).`,
         status === 429,
         !(!body || status < 500),

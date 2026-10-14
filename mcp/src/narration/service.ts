@@ -13,6 +13,7 @@ import {
   type Job,
   type JobItem,
 } from "./model.js";
+export class ConnectionLinkError extends Error {}
 export class NarrationService {
   constructor(
     public store: Store,
@@ -38,13 +39,15 @@ export class NarrationService {
   async connect(owner: string, ticket: string, key: string) {
     // Validate ticket before the outbound request and consume atomically afterwards.
     await this.store.transaction((s) => {
-      const t = assertOwner(s.tickets[digest(ticket)], owner);
-      if (t.expires < Date.now()) throw new Error("Connection link expired.");
+      const t = s.tickets[digest(ticket)];
+      if (!t || t.owner !== owner || t.expires < Date.now())
+        throw new ConnectionLinkError("Connection link expired or already used. Open a new link from Slidecraft.");
     });
     await this.provider.catalog(key);
     await this.store.transaction((s) => {
-      const t = assertOwner(s.tickets[digest(ticket)], owner);
-      if (t.expires < Date.now()) throw new Error("Connection link expired.");
+      const t = s.tickets[digest(ticket)];
+      if (!t || t.owner !== owner || t.expires < Date.now())
+        throw new ConnectionLinkError("Connection link expired or already used. Open a new link from Slidecraft.");
       delete s.tickets[digest(ticket)];
       s.connections[owner] = {
         encryptedKey: this.vault.seal(key),

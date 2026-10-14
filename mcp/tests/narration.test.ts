@@ -79,12 +79,12 @@ test("key encryption, single-use account-bound setup, cross-user job/audio isola
     ticket = await f.service.beginConnection("alice");
   await assert.rejects(
     f.service.connect("mallory", ticket, "key"),
-    /Not found/,
+    /Connection link expired or already used/,
   );
   await f.service.connect("alice", ticket, "secret");
   await assert.rejects(
     f.service.connect("alice", ticket, "secret"),
-    /Not found/,
+    /Connection link expired or already used/,
   );
   assert.ok(
     !(await readFile(f.dir + "/state.json", "utf8")).includes("secret"),
