@@ -4,7 +4,7 @@
   "engines": {
     "node": ">=22.22.2"
   },
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Animated presentation authoring for ChatGPT and MCP clients",
   "author": "Giovanni Laquidara",
   "license": "MIT",

@@ -1,3 +1,4 @@
+import packageInfo from "../../package.json" with { type: "json" };
 import { NarrationPanel } from "./narration-panel.js";
 import { VisualEditor } from "./visual-editor.js";
 import { Presenter } from "./presenter.js";
@@ -947,7 +948,7 @@ export function Studio({
           <div className="sc-bottom">
             <span>Revision {deck.revision} · Saved in view state</span>
             <span role="status" aria-label="Live connection status">
-              {syncStatus} · v1.8.0
+              {syncStatus} · v{packageInfo.version}
             </span>
             <label>
               <input
