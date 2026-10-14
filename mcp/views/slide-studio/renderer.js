@@ -6,6 +6,13 @@ const safeJSON = value => JSON.stringify(value).replace(/</g, '\\u003c').replace
 function slideHTML(s, index, deck) {
   const e = escapeHTML;
   const colorStyle = [['background','--bg'],['foreground','--fg'],['accent','--accent'],['muted','--muted'],['panel','--panel']].filter(([key]) => /^#[0-9a-f]{6}$/i.test(s.colors?.[key] || '')).map(([key, variable]) => variable + ':' + s.colors[key]).join(';');
+  if (s.elements) {
+    const content = s.elements.map(el => {
+      const style = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.width}px;height:${el.height}px;color:${el.color};font-size:${el.fontSize}px;font-weight:${el.bold ? 700 : 400};line-height:1.2;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere`;
+      return `<div data-element-id="${e(el.id)}" data-reveal style="${e(style)}">${el.type === 'image' ? `<img src="${e(el.src)}" alt="${e(el.text || '')}" style="width:100%;height:100%;object-fit:${el.fit}" />` : e(el.text || '')}</div>`;
+    }).join('');
+    return `<section class="slide" id="${e(s.id)}" style="${colorStyle};padding:0;background:var(--bg)" data-motion="${s.motion || 'rise'}" aria-label="Slide ${index + 1}: ${e(s.title)}" ${index ? 'inert aria-hidden="true"' : 'aria-hidden="false"'}>${content}</section>`;
+  }
   const bullets = s.bullets?.length ? `<ul class="bullets">${s.bullets.map(x => `<li data-reveal>${e(x)}</li>`).join('')}</ul>` : '';
   const cards = s.cards ? `<div class="cards">${s.cards.map((c, i) => `<article data-reveal><span class="item-number">${String(i + 1).padStart(2, '0')}</span><h3>${e(c.title)}</h3><p>${e(c.body)}</p></article>`).join('')}</div>` : '';
   const metrics = s.metrics ? `<div class="metrics">${s.metrics.map(c => `<article data-reveal><strong>${e(c.value)}</strong><p>${e(c.label)}</p></article>`).join('')}</div>` : '';

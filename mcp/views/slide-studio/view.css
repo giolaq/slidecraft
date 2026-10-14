@@ -641,3 +641,76 @@ body {
 .sc-studio:has(> .sc-present) > :not(.sc-present) {
   visibility: hidden;
 }
+
+.sc-visual-toolbar,
+.sc-element-properties {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0;
+}
+.sc-visual label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.sc-visual input[type="number"] {
+  width: 80px;
+}
+.sc-visual input[type="color"] {
+  width: 44px;
+  height: 36px;
+  padding: 2px;
+}
+.sc-visual textarea {
+  min-width: 220px;
+  min-height: 80px;
+}
+.sc-visual-viewport {
+  width: 100%;
+  aspect-ratio: 16/9;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #657967;
+}
+.sc-visual-canvas {
+  width: 1600px;
+  height: 900px;
+  position: absolute;
+  transform-origin: top left;
+  font-family: Inter, Arial, Helvetica, sans-serif;
+}
+.sc-visual-element {
+  position: absolute;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.2;
+  overflow: hidden;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  box-sizing: border-box;
+}
+.sc-visual-element.selected {
+  outline: 3px solid #62aaff;
+  outline-offset: -3px;
+}
+.sc-visual-element img {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.sc-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  background: #62aaff;
+  cursor: nwse-resize;
+}
+.sc-element-properties {
+  border: 1px solid #657967;
+  padding: 16px;
+}
