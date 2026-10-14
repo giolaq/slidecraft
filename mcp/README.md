@@ -289,7 +289,7 @@ per-user data-residency endpoints are not currently configurable.
 ## Generate narration and auto-present
 
 1. Choose a **Voice** and **Model** in the Narration panel.
-2. For each slide, enter its separate **Narration script**, or click **Copy speaker notes / Copy slide text**. Click **Save narration** before leaving the slide. Speaker notes and visible slide text are not used as narration automatically.
+2. For each slide, click **Write Narration** to ask your agent to write and save a separate script for the selected slide. The studio reloads the saved script automatically. Review or edit it; click **Save narration** after manual edits. Writing a script does not generate audio or spend ElevenLabs credits. Emotion and vocal cues are model-aware: v3/v4 can use audio tags; Multilingual v2 uses natural phrasing and punctuation.
 3. For slides without speech, select **Silent slide**, set its **Dwell time (seconds)**, and save.
 4. Click **Generate narration…**. Review the voice, model, slides, and character count, then select **Confirm and generate**. This submits paid requests to your ElevenLabs account; matching recordings are reused.
 5. Wait until every slide is **ready** or **silent** and the ready counter matches the slide count. Use **Preview audio** to check a recording and your output volume before the presentation.

@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useCallTool, useOpenExternal } from "mcp-use/react";
+import { useCallTool, useOpenExternal, useSendFollowUp, useHostContext } from "mcp-use/react";
 import type { JSONType } from "zod";
 import type { Deck, Slide } from "./schema.js";
+import { narrationWritingPrompt } from "./narration-writing.js";
 export type NarrationSlideStatus = {
   slideId: string;
   status: string;
@@ -19,26 +20,6 @@ type Catalog = {
   voices: { id: string; name: string }[];
   models: { id: string; name: string; limit: number }[];
 };
-export function visibleScript(slide: Slide) {
-  if (slide.html) return "";
-  if (slide.elements)
-    return slide.elements
-      .filter((e) => e.type === "text")
-      .map((e) => e.text ?? "")
-      .join("\n");
-  return [
-    slide.eyebrow,
-    slide.title,
-    slide.body,
-    ...(slide.bullets ?? []),
-    ...(slide.cards ?? []).flatMap((x) => [x.title, x.body]),
-    ...(slide.steps ?? []).flatMap((x) => [x.title, x.body]),
-    ...(slide.metrics ?? []).flatMap((x) => [x.value, x.label]),
-    slide.footer,
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
 export function NarrationPanel({
   deck,
   slide,
@@ -88,6 +69,8 @@ export function NarrationPanel({
     revise = useCallTool("revise-presentation"),
     playback = useCallTool("get-narration-playback");
   const openExternal = useOpenExternal();
+  const followUp = useSendFollowUp();
+  const { hostCapabilities } = useHostContext();
   const latest = useRef(deck);
   latest.current = deck;
   useEffect(() => {
@@ -168,7 +151,7 @@ export function NarrationPanel({
       setBusy(false);
     }
   }
-  async function save() {
+  async function save(): Promise<void> {
     if (
       baseline.current.revision !== deck.revision ||
       baseline.current.slideId !== slide.id
@@ -410,25 +393,20 @@ export function NarrationPanel({
                 {current?.status ?? "Not generated"}
               </p>
               <button
-                onClick={() => {
-                  setDraft({ ...draft, script: slide.notes ?? "" });
-                  setDirty(true);
-                }}
+                disabled={busy || !hostCapabilities?.message}
+                onClick={() => void run(async () => {
+                  const selectedId = slide.id;
+                  const modelId = settings.modelId;
+                  if (dirty) await save();
+                  await followUp({ prompt: narrationWritingPrompt(deck.id, selectedId, modelId) });
+                  setMessage("Asked your agent to write and save narration for this slide. The script updates here when it is ready.");
+                })}
               >
-                Copy speaker notes
+                Write Narration
               </button>
-              <button
-                disabled={!!slide.html}
-                onClick={() => {
-                  setDraft({
-                    ...draft,
-                    script: visibleScript(slide).slice(0, 10000),
-                  });
-                  setDirty(true);
-                }}
-              >
-                Copy slide text
-              </button>
+              <p>{hostCapabilities?.message
+                ? "Your agent writes a script with natural pacing and expression for your selected voice model. Review it before generating audio."
+                : "Ask your agent in chat to write narration for this slide, or enter a script here."}</p>
             </>
           )}
           <button disabled={busy || !dirty} onClick={() => void run(save)}>
