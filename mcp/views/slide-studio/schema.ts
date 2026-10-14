@@ -48,6 +48,7 @@ export const elementSchema = z
       .string()
       .regex(/^#[0-9a-f]{6}$/i)
       .default("#ffffff"),
+    textAlign: z.enum(["left", "center", "right"]).optional(),
     fontSize: z.number().min(8).max(200).default(40),
     bold: z.boolean().default(false),
     fit: z.enum(["contain", "cover"]).default("contain"),

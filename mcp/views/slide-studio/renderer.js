@@ -8,7 +8,7 @@ function slideHTML(s, index, deck) {
   const colorStyle = [['background','--bg'],['foreground','--fg'],['accent','--accent'],['muted','--muted'],['panel','--panel']].filter(([key]) => /^#[0-9a-f]{6}$/i.test(s.colors?.[key] || '')).map(([key, variable]) => variable + ':' + s.colors[key]).join(';');
   if (s.elements) {
     const content = s.elements.map(el => {
-      const style = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.width}px;height:${el.height}px;color:${el.color};font-size:${el.fontSize}px;font-weight:${el.bold ? 700 : 400};line-height:1.2;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere`;
+      const style = `position:absolute;left:${el.x}px;top:${el.y}px;width:${el.width}px;height:${el.height}px;color:${el.color};font-size:${el.fontSize}px;font-weight:${el.bold ? 700 : 400};text-align:${["left", "center", "right"].includes(el.textAlign) ? el.textAlign : "left"};line-height:1.2;white-space:pre-wrap;overflow:hidden;overflow-wrap:anywhere`;
       return `<div data-element-id="${e(el.id)}" data-reveal style="${e(style)}">${el.type === 'image' ? `<img src="${e(el.src)}" alt="${e(el.text || '')}" style="width:100%;height:100%;object-fit:${el.fit}" />` : e(el.text || '')}</div>`;
     }).join('');
     return `<section class="slide" id="${e(s.id)}" style="${colorStyle};padding:0;background:var(--bg)" data-motion="${s.motion || 'rise'}" aria-label="Slide ${index + 1}: ${e(s.title)}" ${index ? 'inert aria-hidden="true"' : 'aria-hidden="false"'}>${content}</section>`;

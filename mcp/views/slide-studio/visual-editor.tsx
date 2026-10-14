@@ -295,6 +295,7 @@ export function VisualEditor({
                 height: el.height,
                 color: el.color,
                 fontSize: el.fontSize,
+                textAlign: el.textAlign || "left",
                 fontWeight: el.bold ? 700 : 400,
               }}
               onFocus={() => setSelected(el.id)}
@@ -392,6 +393,27 @@ export function VisualEditor({
       {current && (
         <fieldset disabled={busy} className="sc-element-properties">
           <legend>Selected {current.type}</legend>
+          <div
+            role="group"
+            aria-label="Align item to slide"
+            className="sc-alignment"
+          >
+            <span>Align item to slide</span>
+            <button onClick={() => patch({ x: 0 })}>Align left</button>
+            <button onClick={() => patch({ x: (1600 - current.width) / 2 })}>
+              Center horizontally
+            </button>
+            <button onClick={() => patch({ x: 1600 - current.width })}>
+              Align right
+            </button>
+            <button onClick={() => patch({ y: 0 })}>Align top</button>
+            <button onClick={() => patch({ y: (900 - current.height) / 2 })}>
+              Center vertically
+            </button>
+            <button onClick={() => patch({ y: 900 - current.height })}>
+              Align bottom
+            </button>
+          </div>
           <label>
             {current.type === "text" ? "Text" : "Image description"}
             <textarea
@@ -403,6 +425,22 @@ export function VisualEditor({
           </label>
           {current.type === "text" && (
             <>
+              <label>
+                Text alignment
+                <select
+                  aria-label="Text alignment"
+                  value={current.textAlign || "left"}
+                  onChange={(e) =>
+                    patch({
+                      textAlign: e.target.value as "left" | "center" | "right",
+                    })
+                  }
+                >
+                  <option value="left">Left</option>
+                  <option value="center">Center</option>
+                  <option value="right">Right</option>
+                </select>
+              </label>
               <label>
                 Text color{" "}
                 <input

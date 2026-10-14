@@ -714,3 +714,11 @@ body {
   border: 1px solid #657967;
   padding: 16px;
 }
+
+.sc-alignment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
