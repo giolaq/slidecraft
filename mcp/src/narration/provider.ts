@@ -20,6 +20,8 @@ export class ProviderError extends Error {
     message: string,
     public retryable = false,
     public uncertain = false,
+    public httpStatus?: number,
+    public code?: string,
   ) {
     super(message);
   }
@@ -68,7 +70,8 @@ export class ElevenLabs implements Provider {
       const detail = await response.json().catch(() => null) as { detail?: { status?: unknown } } | null;
       const code = typeof detail?.detail?.status === "string" && safeErrorCodes.has(detail.detail.status)
         ? detail.detail.status : undefined;
-      const operation = body ? "speech generation" : path.startsWith("/v2/voices") ? "voice listing" : "model listing";
+      const isVoices = /^\/v[12]\/voices(?:[/?]|$)/.test(path);
+      const operation = body ? "speech generation" : isVoices ? "voice listing" : "model listing";
       const diagnostic = `ElevenLabs ${operation} failed (HTTP ${status}${code ? `; ${code}` : ""}).`;
       const permissions = code === "missing_permissions" || code === "missing_permission" || code === "insufficient_permissions";
       throw new ProviderError(
@@ -77,7 +80,7 @@ export class ElevenLabs implements Provider {
           : status === 401 || status === 403 || permissions
             ? body
               ? diagnostic + " Enable Text to Speech access or reconnect with a valid restricted key."
-              : path.startsWith("/v2/voices")
+              : isVoices
                 ? diagnostic + " Enable Voices read access and check that the key is valid."
                 : diagnostic + " Enable Models read access and check that the key is valid."
             : code === "workspace_not_found" || code === "invalid_workspace"
@@ -85,6 +88,8 @@ export class ElevenLabs implements Provider {
               : diagnostic,
         status === 429,
         !(!body || status < 500),
+        status,
+        code,
       );
     }
     return response;
@@ -93,13 +98,21 @@ export class ElevenLabs implements Provider {
     const voices: Voice[] = [];
     let cursor: string | undefined;
     for (let page = 0; page < 100; page++) {
-      const data = (await (
-        await this.request(
-          "/v2/voices?page_size=100" +
-            (cursor ? "&next_page_token=" + encodeURIComponent(cursor) : ""),
-          key,
-        )
-      ).json()) as {
+      let response: Response;
+      try {
+        // Use the provider's documented default page size.
+        response = await this.request(
+          "/v2/voices" + (cursor ? "?next_page_token=" + encodeURIComponent(cursor) : ""), key,
+        );
+      } catch (error) {
+        // Compatibility with accounts/gateways that reject v2 search. This is
+        // one read-only fallback, never a retry of a paid generation request.
+        // Known credential, permission, quota and policy failures are preserved.
+        if (page !== 0 || !(error instanceof ProviderError) || error.httpStatus !== 400 || error.code)
+          throw error;
+        response = await this.request("/v1/voices", key);
+      }
+      const data = (await response.json()) as {
         voices: { voice_id: string; name: string }[];
         has_more: boolean;
         next_page_token?: string;
@@ -110,6 +123,7 @@ export class ElevenLabs implements Provider {
       if (!data.has_more) break;
       if (!data.next_page_token)
         throw new Error("Incomplete ElevenLabs voice catalog.");
+      if (page === 99) throw new ProviderError("ElevenLabs voice catalog exceeded the pagination limit.");
       cursor = data.next_page_token;
     }
     const models = (await (await this.request("/v1/models", key)).json()) as {

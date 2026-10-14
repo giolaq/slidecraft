@@ -37,7 +37,9 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
     rejectVoiceKey = false,
     rejectModelKey = false,
     badVoiceRequest = false,
-    unknownVoiceCode = false;
+    unknownVoiceCode = false,
+    legacyVoiceSuccess = false,
+    legacyVoiceCalls = 0;
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -58,6 +60,10 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
       if (badVoiceRequest) return Response.json({ detail: { status: unknownVoiceCode ? "private-eleven-key" : "missing_permissions", message: "private-eleven-key upstream detail" } }, { status: 400 });
       if (rejectVoiceKey) return Response.json({ detail: "private-eleven-key upstream detail" }, { status: 401 });
       return Response.json({ voices: [], has_more: false });
+    }
+    if (url === "https://api.elevenlabs.io/v1/voices") {
+      legacyVoiceCalls++;
+      return legacyVoiceSuccess ? Response.json({ voices: [] }) : Response.json({ detail: { status: "private-eleven-key", message: "private-eleven-key" } }, { status: 400 });
     }
     if (url === "https://api.elevenlabs.io/v1/models")
       return rejectModelKey ? Response.json({ detail: "private-eleven-key upstream detail" }, { status: 403 }) : Response.json([]);
@@ -159,16 +165,21 @@ test("secure connection page verifies JWT identity, state, CSRF, ticket ownershi
   assert.match(badMessage, /voice listing failed \(HTTP 400; missing_permissions\)/);
   assert.match(badMessage, /Voices read access/);
   assert.ok(!badMessage.includes("private-eleven-key"));
+  assert.equal(legacyVoiceCalls, 0);
   unknownVoiceCode = true;
   const unknownFailure = await post("https://slidecraft.example", csrf);
   const unknownMessage = await unknownFailure.text();
   assert.match(unknownMessage, /voice listing failed \(HTTP 400\)/);
   assert.ok(!unknownMessage.includes("private-eleven-key"));
-  badVoiceRequest = false;
+  assert.equal(legacyVoiceCalls, 1);
+  // The fallback is still key-authenticated and can complete the same ticket.
+  legacyVoiceSuccess = true;
   assert.equal((await post("https://slidecraft.example", csrf)).status, 200);
   assert.equal(await service.connected(owner), true);
   assert.equal((await post("https://slidecraft.example", csrf)).status, 400);
   assert.equal(providerCalls, 5);
+  assert.equal(legacyVoiceCalls, 2);
+  badVoiceRequest = false;
   assert.ok(
     !(await readFile(dir + "/state.json", "utf8")).includes(
       "private-eleven-key",
