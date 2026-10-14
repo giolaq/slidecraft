@@ -34,7 +34,7 @@ const narrationCsp = narrationConfig
 const serverOptions = {
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.8.0",
+  version: "1.8.1",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
@@ -43,7 +43,9 @@ const serverOptions = {
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
 };
 const server = oauth
-  ? new MCPServer({ ...serverOptions, oauth })
+  // Hosts need the catalog before linking an account. No tool declares noauth,
+  // so mixed discovery still requires verified OAuth for every tool invocation.
+  ? new MCPServer({ ...serverOptions, oauth, mixedAuth: true })
   : new MCPServer(serverOptions);
 registerNarrationRoutes(server.app);
 // Read-only bearer-capability endpoint for panes whose host tool bridge is unavailable.
