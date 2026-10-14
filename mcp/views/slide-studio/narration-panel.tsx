@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { useCallTool, useOpenExternal, useSendFollowUp, useHostContext } from "mcp-use/react";
-import type { JSONType } from "zod";
+import { useCallTool, useOpenExternal, useSendFollowUp, useHostContext, useViewTool } from "mcp-use/react";
+import { z, type JSONType } from "zod";
 import type { Deck, Slide } from "./schema.js";
 import { narrationWritingPrompt } from "./narration-writing.js";
 export type NarrationSlideStatus = {
@@ -67,12 +67,51 @@ export function NarrationPanel({
     generate = useCallTool("generate-narration"),
     cancel = useCallTool("cancel-narration-job"),
     revise = useCallTool("revise-presentation"),
-    playback = useCallTool("get-narration-playback");
+    playback = useCallTool("get-narration-playback"),
+    live = useCallTool("get-live-deck");
   const openExternal = useOpenExternal();
   const followUp = useSendFollowUp();
   const { hostCapabilities } = useHostContext();
   const latest = useRef(deck);
   latest.current = deck;
+  const editor = useRef({ slideId: slide.id, dirty });
+  editor.current = { slideId: slide.id, dirty };
+  useViewTool({
+    name: "save-visible-narration",
+    description: "Save an agent-written narration script into the open studio's narration field. After Write Narration, call this with the requested slideId and script; it persists the script and immediately fills the editor. Does not generate audio or spend credits. Preserves other slides and voice settings.",
+    inputSchema: z.object({ slideId: z.string(), script: z.string().trim().min(1).max(10000) }),
+  }, async ({ slideId, script }) => {
+    try {
+      if (editor.current.slideId === slideId && editor.current.dirty)
+        throw new Error("There are new unsaved narration edits. Ask the user to save or discard them before replacing the script.");
+      let current = latest.current;
+      if (current.syncToken) {
+        const response = await live.callTool({ syncToken: current.syncToken });
+        if (!response.structuredContent.deck) throw new Error("Live session expired. Reopen this presentation before writing narration.");
+        current = response.structuredContent.deck;
+      }
+      const index = current.slides.findIndex(s => s.id === slideId);
+      if (index < 0) throw new Error("The requested slide no longer exists.");
+      const result = await revise.callTool({
+        deck: current, expectedRevision: current.revision, selectedSlideId: slideId,
+        edits: [{ op: "add", path: `/slides/${index}/narration`, value: {
+          ...current.slides[index].narration, script, mode: "speech",
+          silentDurationMs: current.slides[index].narration?.silentDurationMs ?? 5000,
+        } }],
+      });
+      const saved = result.structuredContent.deck;
+      onDeck(saved);
+      if (editor.current.slideId === slideId && !editor.current.dirty) {
+        setDraft(saved.slides.find(s => s.id === slideId)!.narration!);
+        baseline.current = { revision: saved.revision, slideId };
+      }
+      setReview(false);
+      setMessage("Narration written and saved. Review the script below before generating audio.");
+      return { content: [{ type: "text" as const, text: "Narration saved to the requested slide and displayed in the studio's narration field." }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }] };
+    }
+  });
   useEffect(() => {
     if (!dirty) {
       setDraft(
@@ -398,7 +437,14 @@ export function NarrationPanel({
                   const selectedId = slide.id;
                   const modelId = settings.modelId;
                   if (dirty) await save();
-                  await followUp({ prompt: narrationWritingPrompt(deck.id, selectedId, modelId) });
+                  const source = JSON.stringify({
+                    title: slide.title, body: slide.body, notes: slide.notes,
+                    bullets: slide.bullets, cards: slide.cards, steps: slide.steps, metrics: slide.metrics,
+                    textElements: slide.elements?.filter(e => e.type === "text").map(e => e.text),
+                    htmlText: slide.html?.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<[^>]*>/g, " "),
+                    existingScript: slide.narration?.script,
+                  }).slice(0, 16000);
+                  await followUp({ prompt: narrationWritingPrompt(deck.id, selectedId, modelId, source) });
                   setMessage("Asked your agent to write and save narration for this slide. The script updates here when it is ready.");
                 })}
               >

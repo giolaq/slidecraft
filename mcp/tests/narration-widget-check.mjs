@@ -113,7 +113,7 @@ const resource = await rpc("resources/read", {
   uri: "ui://views/slide-studio.html",
 });
 const encode = (x) => JSON.stringify(x).replace(/</g, "\\u003c");
-const html = `<!doctype html><html><body><iframe allow="fullscreen; autoplay" style="width:100%;height:1500px;border:0"></iframe><script>window.agentRequests=[];const f=document.querySelector('iframe');addEventListener('message',async e=>{if(e.source!==f.contentWindow||!e.data?.jsonrpc)return;const m=e.data;const send=x=>f.contentWindow.postMessage({jsonrpc:'2.0',...x},'*');if(m.method==='ui/notifications/initialized'){send({method:'ui/notifications/tool-input',params:{arguments:{}}});send({method:'ui/notifications/tool-result',params:${encode(initial)}});return;}if(m.id===undefined)return;try{let result={};if(m.method==='ui/initialize')result={protocolVersion:m.params.protocolVersion,hostInfo:{name:'Narration test host',version:'1'},hostCapabilities:{message:{},serverTools:{},openLinks:{},updateModelContext:{text:{},structuredContent:{}}},hostContext:{theme:'dark',displayMode:'inline',availableDisplayModes:['inline','fullscreen'],platform:'web'}};if(m.method==='tools/call')result=await(await fetch('/rpc',{method:'POST',body:JSON.stringify(m.params)})).json();if(m.method==='ui/message'){window.agentRequests.push(m.params);result={};}if(m.method==='ui/request-display-mode')result={mode:m.params.mode};send({id:m.id,result});}catch(e){send({id:m.id,error:{code:-32603,message:String(e)}});}});f.srcdoc=${encode(resource.contents[0].text)};</script></body></html>`;
+const html = `<!doctype html><html><body><iframe allow="fullscreen; autoplay" style="width:100%;height:1500px;border:0"></iframe><script>window.agentRequests=[];window.widgetResult=null;const f=document.querySelector('iframe');addEventListener('message',async e=>{if(e.source!==f.contentWindow||!e.data?.jsonrpc)return;const m=e.data;if(!m.method){window.widgetResult=m;return;}const send=x=>f.contentWindow.postMessage({jsonrpc:'2.0',...x},'*');if(m.method==='ui/notifications/initialized'){send({method:'ui/notifications/tool-input',params:{arguments:{}}});send({method:'ui/notifications/tool-result',params:${encode(initial)}});return;}if(m.id===undefined)return;try{let result={};if(m.method==='ui/initialize')result={protocolVersion:m.params.protocolVersion,hostInfo:{name:'Narration test host',version:'1'},hostCapabilities:{message:{},serverTools:{},openLinks:{},updateModelContext:{text:{},structuredContent:{}}},hostContext:{theme:'dark',displayMode:'inline',availableDisplayModes:['inline','fullscreen'],platform:'web'}};if(m.method==='tools/call')result=await(await fetch('/rpc',{method:'POST',body:JSON.stringify(m.params)})).json();if(m.method==='ui/message'){window.agentRequests.push(m.params);result={};}if(m.method==='ui/request-display-mode')result={mode:m.params.mode};send({id:m.id,result});}catch(e){send({id:m.id,error:{code:-32603,message:String(e)}});}});f.srcdoc=${encode(resource.contents[0].text)};</script></body></html>`;
 let origin;
 const envelope = (data) => ({
   content: [{ type: "text", text: "Fixture result" }],
@@ -210,23 +210,34 @@ try {
   assert.match(request, /only the slide with ID/);
   assert.match(request, /Do NOT insert square-bracket audio tags/);
   assert.equal(generationCalls, 0);
-  // Simulate the host agent using the actual edit tool; the studio must reload its script.
-  const live = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: initial.structuredContent.deck.syncToken}});
-  const currentDeck = live.structuredContent.deck;
-  const written = await rpc("tools/call", {name: "revise-presentation", arguments: {
-    deck: currentDeck, expectedRevision: currentDeck.revision, selectedSlideId: "one",
-    edits: [{op: "add", path: "/slides/0/narration", value: {mode: "speech", script: "An agent-written explanation for this slide.", silentDurationMs: 5000}}]
-  }});
-  assert.equal(written.structuredContent.deck.slides[0].notes, "Speaker notes stay separate.");
-  assert.deepEqual(written.structuredContent.deck.slides.slice(1), currentDeck.slides.slice(1));
-  await page.waitForFunction(() => document.querySelector("iframe").contentWindow !== null);
-  await page.evaluate(result => document.querySelector("iframe").contentWindow.postMessage({jsonrpc:"2.0",method:"ui/notifications/tool-result",params:result}, "*"), written);
-  await f.getByLabel("Narration script", { exact: true }).filter({}).waitFor();
-  await page.waitForFunction(() => document.querySelector("iframe").contentDocument?.querySelector('textarea[aria-label="Narration script"]')?.value === "An agent-written explanation for this slide.", {timeout: 10000});
+  assert.match(request, /save-visible-narration/);
+  assert.match(request, /Speaker notes stay separate/);
+  // Invoke the actual mounted action as a host agent does; no synthetic tool-result notification.
+  const before = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: initial.structuredContent.deck.syncToken}});
+  await page.evaluate(() => document.querySelector("iframe").contentWindow.postMessage({
+    jsonrpc: "2.0", id: 991, method: "tools/call", params: {
+      name: "save-visible-narration", arguments: {slideId: "one", script: "An agent-written explanation for this slide."}
+    }
+  }, "*"));
+  await page.waitForFunction(() => window.widgetResult?.id === 991);
+  assert.ok(!(await page.evaluate(() => window.widgetResult)).result.isError);
+  await f.getByText("Narration written and saved.", { exact: false }).waitFor();
   assert.equal(await f.getByLabel("Narration script", { exact: true }).inputValue(), "An agent-written explanation for this slide.");
+  const after = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: initial.structuredContent.deck.syncToken}});
+  assert.equal(after.structuredContent.deck.slides[0].notes, "Speaker notes stay separate.");
+  assert.deepEqual(after.structuredContent.deck.slides.slice(1), before.structuredContent.deck.slides.slice(1));
+  assert.equal(generationCalls, 0);
   await f
     .getByLabel("Narration script", { exact: true })
     .fill("This is my independent narration script.");
+  await page.evaluate(() => document.querySelector("iframe").contentWindow.postMessage({
+    jsonrpc: "2.0", id: 992, method: "tools/call", params: {
+      name: "save-visible-narration", arguments: {slideId: "one", script: "Must not overwrite the user's draft."}
+    }
+  }, "*"));
+  await page.waitForFunction(() => window.widgetResult?.id === 992);
+  assert.ok((await page.evaluate(() => window.widgetResult)).result.isError);
+  assert.equal(await f.getByLabel("Narration script", { exact: true }).inputValue(), "This is my independent narration script.");
   await f.getByRole("button", { name: "Save narration", exact: true }).click();
   await f.getByText("Narration saved.", { exact: false }).waitFor();
   assert.equal(generationCalls, 0);
