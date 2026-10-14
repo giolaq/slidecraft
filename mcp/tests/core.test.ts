@@ -46,3 +46,34 @@ test("HTML export embeds animation runtime and escapes ordinary text", () => {
   assert.ok(!html.includes("<h1 data-reveal><script>"));
   assert.ok(html.includes("&lt;script&gt;"));
 });
+test("visual elements validate geometry, identity and image sources and export escaped text", () => {
+  const d = structuredClone(demo);
+  d.slides[0].elements = [
+    {
+      id: "text-one",
+      type: "text",
+      text: "<script>bad()</script>",
+      x: 120,
+      y: 100,
+      width: 600,
+      height: 200,
+      fontSize: 48,
+      bold: true,
+      color: "#ff0000",
+      fit: "contain",
+    },
+  ];
+  const valid = checkDeck(d);
+  const html = render(valid);
+  assert.match(html, /data-element-id="text-one"/);
+  assert.match(html, /left:120px/);
+  assert.match(html, /&lt;script&gt;bad\(\)&lt;\/script&gt;/);
+  d.slides[0].elements[0].x = 1500;
+  assert.throws(() => checkDeck(d), /fit inside/);
+  d.slides[0].elements[0].x = 120;
+  d.slides[0].elements.push({ ...d.slides[0].elements[0] });
+  assert.throws(() => checkDeck(d), /Duplicate element/);
+  d.slides[0].elements.pop();
+  d.slides[0].elements[0].type = "image";
+  assert.throws(() => checkDeck(d), /needs a source/);
+});

@@ -1,3 +1,4 @@
+import { VisualEditor } from "./visual-editor.js";
 import { Presenter } from "./presenter.js";
 import { editsSchema } from "./edits.js";
 import { CodePreview } from "./code-preview.js";
@@ -221,7 +222,7 @@ function SlideCanvas(props: {
   if (
     props.deck.css ||
     props.deck.script ||
-    props.deck.slides.some((s) => s.layout === "custom" || s.html)
+    props.deck.slides.some((s) => s.layout === "custom" || s.html || s.elements)
   )
     return <CodePreview {...props} />;
   return <StandardSlideCanvas {...props} />;
@@ -238,6 +239,10 @@ export function Studio({
     deck: initial,
     selectedSlideId: initialSelectedSlideId ?? initial.slides[0].id,
   });
+  const [visualEditing, setVisualEditing] = useState<{
+    deck: Deck;
+    slide: Slide;
+  } | null>(null);
   const [presenting, setPresenting] = useState(false);
   const [syncStatus, setSyncStatus] = useState("Connecting…");
   const signature = JSON.stringify(initial),
@@ -400,6 +405,10 @@ export function Studio({
     deck.slides.find((s) => s.id === state.selectedSlideId) ?? deck.slides[0];
   const position = deck.slides.indexOf(slide);
   function select(id: string) {
+    if (visualEditing) {
+      setNotice("Save or cancel visual edits before changing slides.");
+      return;
+    }
     setState((s) => ({ ...s, selectedSlideId: id }));
     setEditing(false);
     setNotice("");
@@ -634,16 +643,27 @@ export function Studio({
         </div>
         <span className="sc-badge">STUDIO</span>
         <div className="sc-spacer" />
-        <button onClick={() => void startPresenting()}>Present</button>
-        <button disabled={busy} onClick={() => importInput.current?.click()}>
+        <button
+          disabled={Boolean(visualEditing)}
+          onClick={() => void startPresenting()}
+        >
+          Present
+        </button>
+        <button
+          disabled={busy || Boolean(visualEditing)}
+          onClick={() => importInput.current?.click()}
+        >
           Import JSON
         </button>
-        <button disabled={busy} onClick={() => void exportFile("json")}>
+        <button
+          disabled={busy || Boolean(visualEditing)}
+          onClick={() => void exportFile("json")}
+        >
           Save JSON
         </button>
         <button
           className="sc-primary"
-          disabled={busy}
+          disabled={busy || Boolean(visualEditing)}
           onClick={() => void exportFile("html")}
         >
           Export HTML
@@ -706,7 +726,7 @@ export function Studio({
             </button>
           ))}
           <button
-            disabled={busy}
+            disabled={busy || Boolean(visualEditing)}
             onClick={() =>
               void run(async () => {
                 const r = await edit.callTool({
@@ -742,52 +762,92 @@ export function Studio({
               Replay motion
             </button>
           </div>
-          <SlideCanvas
-            deck={deck}
-            slide={slide}
-            replay={replay}
-            onSelect={select}
-          />
-          <nav className="sc-navigation" aria-label="Slides">
-            <button
-              disabled={position === 0}
-              onClick={() => select(deck.slides[position - 1].id)}
-            >
-              ← Previous
-            </button>
-            <span aria-live="polite">
-              {position + 1} / {deck.slides.length}
-            </span>
-            <button
-              disabled={position === deck.slides.length - 1}
-              onClick={() => select(deck.slides[position + 1].id)}
-            >
-              Next →
-            </button>
-            <div className="sc-spacer" />
-            <button onClick={() => setShowNotes((x) => !x)}>
-              {showNotes ? "Hide notes" : "Speaker notes"}
-            </button>
-            <button
-              onClick={() => {
-                setDraft({
-                  title: slide.title,
-                  body: slide.body ?? "",
-                  notes: slide.notes ?? "",
+          {visualEditing ? (
+            <VisualEditor
+              key={`${visualEditing.deck.id}:${visualEditing.slide.id}`}
+              deck={visualEditing.deck}
+              slide={visualEditing.slide}
+              onClose={() => setVisualEditing(null)}
+              onSave={async (elements, colors) => {
+                const r = await update.callTool({
+                  deck: visualEditing.deck,
+                  slideId: visualEditing.slide.id,
+                  expectedRevision: visualEditing.deck.revision,
+                  changes: { elements, colors },
                 });
-                setEditing((x) => !x);
+                adopt(r.structuredContent.deck);
+                setVisualEditing(null);
+                setNotice("Visual edits saved and synced.");
               }}
+            />
+          ) : (
+            <SlideCanvas
+              deck={deck}
+              slide={slide}
+              replay={replay}
+              onSelect={select}
+            />
+          )}
+          {!visualEditing && (
+            <button
+              disabled={busy || Boolean(slide.html || deck.css || deck.script)}
+              title={
+                slide.html || deck.css || deck.script
+                  ? "Custom HTML/CSS/JavaScript slides use agent editing."
+                  : "Move, resize, and style slide elements"
+              }
+              onClick={() =>
+                setVisualEditing({
+                  deck: structuredClone(deck),
+                  slide: structuredClone(slide),
+                })
+              }
             >
-              Edit slide
+              Visual edit
             </button>
-          </nav>
+          )}
+          {!visualEditing && (
+            <nav className="sc-navigation" aria-label="Slides">
+              <button
+                disabled={position === 0}
+                onClick={() => select(deck.slides[position - 1].id)}
+              >
+                ← Previous
+              </button>
+              <span aria-live="polite">
+                {position + 1} / {deck.slides.length}
+              </span>
+              <button
+                disabled={position === deck.slides.length - 1}
+                onClick={() => select(deck.slides[position + 1].id)}
+              >
+                Next →
+              </button>
+              <div className="sc-spacer" />
+              <button onClick={() => setShowNotes((x) => !x)}>
+                {showNotes ? "Hide notes" : "Speaker notes"}
+              </button>
+              <button
+                onClick={() => {
+                  setDraft({
+                    title: slide.title,
+                    body: slide.body ?? "",
+                    notes: slide.notes ?? "",
+                  });
+                  setEditing((x) => !x);
+                }}
+              >
+                Edit slide
+              </button>
+            </nav>
+          )}
           {showNotes && (
             <section className="sc-notes">
               <h3>Speaker notes</h3>
               <p>{slide.notes || "No notes for this slide yet."}</p>
             </section>
           )}
-          {editing && (
+          {editing && !visualEditing && (
             <form
               className="sc-edit"
               onSubmit={(e) => {
@@ -796,7 +856,7 @@ export function Studio({
               }}
             >
               <label>
-                Title
+                {slide.elements ? "Slide title (metadata)" : "Title"}
                 <input
                   value={draft.title}
                   onChange={(e) =>
@@ -807,7 +867,9 @@ export function Studio({
                 />
               </label>
               <label>
-                Supporting text
+                {slide.elements
+                  ? "Supporting text (metadata)"
+                  : "Supporting text"}
                 <textarea
                   value={draft.body}
                   onChange={(e) =>
@@ -827,7 +889,11 @@ export function Studio({
                 />
               </label>
               <div>
-                <button type="submit" className="sc-primary" disabled={busy}>
+                <button
+                  type="submit"
+                  className="sc-primary"
+                  disabled={busy || Boolean(visualEditing)}
+                >
                   Apply changes
                 </button>
                 <button type="button" onClick={() => setEditing(false)}>
@@ -877,7 +943,7 @@ export function Studio({
           <div className="sc-bottom">
             <span>Revision {deck.revision} · Saved in view state</span>
             <span role="status" aria-label="Live connection status">
-              {syncStatus} · v1.5.1
+              {syncStatus} · v1.6.0
             </span>
             <label>
               <input
@@ -900,7 +966,10 @@ export function Studio({
           {download && (
             <section className="sc-download">
               <strong>{download.name}</strong>
-              <button disabled={busy} onClick={() => void downloadFile()}>
+              <button
+                disabled={busy || Boolean(visualEditing)}
+                onClick={() => void downloadFile()}
+              >
                 Download file
               </button>
               <details>

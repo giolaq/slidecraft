@@ -20,11 +20,11 @@ import { render } from "./src/render.js";
 const server = new MCPServer({
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.5.1",
+  version: "1.6.0",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
-    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance; this is not durable storage. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
+    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance; this is not durable storage. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Slides with elements use a freeform visual canvas: edit /slides/INDEX/elements/INDEX/text, color, x, y, width, height, fontSize, bold, src or fit using revise-presentation. On these slides title/body are metadata; editing them does not change visible elements. Elements use a 1600 by 900 canvas and array order is stacking order. Preserve elements when editing. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
   websiteUrl: "https://github.com/giolaq/slidecraft",
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
 });
@@ -348,7 +348,27 @@ export const addPhoto = server.tool(
         reviseSlide(
           deck,
           slideId,
-          { image: { src, alt, caption, fit } },
+          deck.slides.find((s) => s.id === slideId)?.elements
+            ? {
+                elements: [
+                  ...deck.slides.find((s) => s.id === slideId)!.elements!,
+                  {
+                    id: "photo-" + crypto.randomUUID().slice(0, 8),
+                    type: "image" as const,
+                    src,
+                    text: alt,
+                    x: 800,
+                    y: 250,
+                    width: 700,
+                    height: 500,
+                    color: "#ffffff",
+                    fontSize: 40,
+                    bold: false,
+                    fit,
+                  },
+                ],
+              }
+            : { image: { src, alt, caption, fit } },
           expectedRevision,
         ),
         "Embedded the optimized photo in the slide.",

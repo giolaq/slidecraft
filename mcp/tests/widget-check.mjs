@@ -470,16 +470,27 @@ try {
       .locator("html")
       .evaluate(() => Boolean(document.fullscreenElement)),
   );
-  const controls = presentation.getByRole("navigation", { name: "Presenter controls" });
+  const controls = presentation.getByRole("navigation", {
+    name: "Presenter controls",
+  });
   await page.mouse.move(500, 400);
   await page.waitForTimeout(2100);
-  assert.equal(await controls.evaluate((el) => getComputedStyle(el).opacity), "0");
+  assert.equal(
+    await controls.evaluate((el) => getComputedStyle(el).opacity),
+    "0",
+  );
   await controls.hover();
   await page.waitForTimeout(250);
-  assert.equal(await controls.evaluate((el) => getComputedStyle(el).opacity), "1");
+  assert.equal(
+    await controls.evaluate((el) => getComputedStyle(el).opacity),
+    "1",
+  );
   await page.mouse.move(500, 400);
   await page.waitForTimeout(2100);
-  assert.equal(await controls.evaluate((el) => getComputedStyle(el).opacity), "0");
+  assert.equal(
+    await controls.evaluate((el) => getComputedStyle(el).opacity),
+    "0",
+  );
   const audience = presentation.frameLocator("iframe");
   await audience.locator(".slide.active .slide-photo img").waitFor();
   assert.equal(await audience.locator("#notes-toggle").isVisible(), false);
@@ -549,13 +560,128 @@ try {
       .evaluate((img) => img.complete && img.naturalWidth > 0),
   );
   await photoPage.close();
+  await page.bringToFront();
+  await frame.getByRole("button", { name: "Visual edit", exact: true }).click();
+  const visual = frame.getByRole("region", { name: "Visual slide editor" });
+  await visual.getByRole("button", { name: "Add text", exact: true }).click();
+  await visual
+    .getByLabel("Element text", { exact: true })
+    .fill("Visually authored text");
+  await visual.getByLabel("Text color", { exact: true }).fill("#ff3300");
+  await visual.getByLabel("Slide background", { exact: true }).fill("#112233");
+  const movable = visual.getByRole("button", {
+    name: "Select text: Visually authored text",
+    exact: true,
+  });
+  const bounds = await movable.boundingBox();
+  await page.mouse.move(bounds.x + 10, bounds.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + 65, bounds.y + 45, { steps: 5 });
+  await page.mouse.up();
+  assert.ok(
+    Number(await visual.getByLabel("Element x", { exact: true }).inputValue()) >
+      120,
+  );
+  await visual.getByLabel("Element width", { exact: true }).fill("650");
+  await visual
+    .getByLabel("Upload slide image")
+    .setInputFiles({
+      name: "visual-photo.png",
+      mimeType: "image/png",
+      buffer: imageBytes,
+    });
+  await visual
+    .getByRole("button", { name: "Save visual edits", exact: true })
+    .waitFor();
+  await visual
+    .getByRole("button", {
+      name: "Select image: visual-photo.png",
+      exact: true,
+    })
+    .waitFor();
+  await visual
+    .getByRole("button", { name: "Save visual edits", exact: true })
+    .click();
+  await visual.waitFor({ state: "hidden" });
+  const visualPreview = frame.locator(".sc-canvas").frameLocator("iframe");
+  await visualPreview
+    .getByText("Visually authored text", { exact: true })
+    .waitFor();
+  assert.equal(
+    await visualPreview
+      .getByText("Visually authored text", { exact: true })
+      .evaluate((el) => getComputedStyle(el).color),
+    "rgb(255, 51, 0)",
+  );
+  assert.ok(
+    await visualPreview
+      .getByAltText("visual-photo.png", { exact: true })
+      .evaluate((img) => img.complete && img.naturalWidth > 0),
+  );
+  const visualLive = await rpc("tools/call", {
+    name: "get-live-deck",
+    arguments: { syncToken: plainPhoto.structuredContent.deck.syncToken },
+  });
+  const visualDeck = visualLive.structuredContent.deck;
+  const authored = visualDeck.slides[0].elements.find(
+    (el) => el.text === "Visually authored text",
+  );
+  assert.equal(authored.width, 650);
+  const visualExport = await rpc("tools/call", {
+    name: "export-deck",
+    arguments: { deck: visualDeck, format: "html" },
+  });
+  const visualPage = await browser.newPage();
+  await visualPage.setContent(visualExport._meta.fileText);
+  await visualPage
+    .getByText("Visually authored text", { exact: true })
+    .waitFor();
+  assert.ok(
+    Math.abs(
+      (await visualPage
+        .locator(`[data-element-id="${authored.id}"]`)
+        .evaluate((el) => parseFloat(el.style.left))) - authored.x,
+    ) < 0.01,
+  );
+  await visualPage.close();
+  await page.bringToFront();
+  await frame.getByRole("button", { name: "Visual edit", exact: true }).click();
+  await visual.getByRole("button", { name: "Add text", exact: true }).click();
+  await visual
+    .getByLabel("Element text", { exact: true })
+    .fill("Keep this unsaved draft");
+  const concurrent = await rpc("tools/call", {
+    name: "update-slide",
+    arguments: {
+      deck: visualDeck,
+      expectedRevision: visualDeck.revision,
+      slideId: visualDeck.slides[0].id,
+      changes: { notes: "Concurrent agent edit" },
+    },
+  });
+  assert.ok(!concurrent.isError);
+  await page.waitForTimeout(2500);
+  assert.equal(
+    await visual.getByLabel("Element text", { exact: true }).inputValue(),
+    "Keep this unsaved draft",
+  );
+  await visual
+    .getByRole("button", { name: "Save visual edits", exact: true })
+    .click();
+  await visual.getByRole("alert").waitFor();
+  assert.equal(
+    await visual.getByLabel("Element text", { exact: true }).inputValue(),
+    "Keep this unsaved draft",
+  );
+  await visual.getByRole("button", { name: "Cancel", exact: true }).click();
+
   await page.setViewportSize({ width: 390, height: 1000 });
   await page.waitForTimeout(200);
   const box = await frame.locator(".sc-studio").boundingBox();
   assert.ok(box.width <= 390);
   assert.deepEqual(errors, []);
   console.log(
-    "Widget checks passed: decoded embedded image, audience presentation, speaker notes, slide navigation, separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
+    "Widget checks passed: visual dragging, color pickers, image upload, persisted geometry, export parity, concurrent draft conflict protection, decoded embedded image, audience presentation, speaker notes, slide navigation, separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
   );
 } finally {
   await browser.close();

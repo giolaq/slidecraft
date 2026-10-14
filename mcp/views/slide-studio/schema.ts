@@ -25,6 +25,35 @@ export const themeSchema = z
   })
   .strict();
 export const slideColorsSchema = themeSchema.omit({ mode: true }).partial();
+export const elementSchema = z
+  .object({
+    id: z
+      .string()
+      .regex(/^[a-z][a-z0-9-]*$/)
+      .max(80),
+    type: z.enum(["text", "image"]),
+    x: z.number().min(0).max(1600),
+    y: z.number().min(0).max(900),
+    width: z.number().min(20).max(1600),
+    height: z.number().min(20).max(900),
+    text: z.string().max(8000).optional(),
+    src: z
+      .string()
+      .max(180000)
+      .regex(
+        /^(https:\/\/[^\s]+|data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+)$/,
+      )
+      .optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-f]{6}$/i)
+      .default("#ffffff"),
+    fontSize: z.number().min(8).max(200).default(40),
+    bold: z.boolean().default(false),
+    fit: z.enum(["contain", "cover"]).default("contain"),
+  })
+  .strict();
+export type SlideElement = z.infer<typeof elementSchema>;
 export const slideSchema = z
   .object({
     id: z
@@ -41,6 +70,7 @@ export const slideSchema = z
       "custom",
     ]),
     colors: slideColorsSchema.optional(),
+    elements: z.array(elementSchema).max(80).optional(),
     image: z
       .object({
         src: z
@@ -109,6 +139,18 @@ export function checkDeck(input: unknown): Deck {
     if (ids.has(s.id)) throw new Error(`Duplicate slide ID: ${s.id}`);
     ids.add(s.id);
     if (!s.title.trim()) throw new Error(`Slide ${s.id} needs a title.`);
+    if (s.elements) {
+      const elementIds = new Set<string>();
+      for (const el of s.elements) {
+        if (elementIds.has(el.id))
+          throw new Error(`Duplicate element ID: ${el.id}`);
+        elementIds.add(el.id);
+        if (el.type === "image" && !el.src)
+          throw new Error("Image element needs a source.");
+        if (el.x + el.width > 1600 || el.y + el.height > 900)
+          throw new Error("Elements must fit inside the slide.");
+      }
+    }
     const field = (
       {
         cards: "cards",
