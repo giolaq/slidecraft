@@ -1,9 +1,10 @@
+import { useNarrationPlayback } from "./use-narration-playback.js";
 import { useEffect, useRef, useState } from "react";
 import { CodePreview } from "./code-preview.js";
 import type { Deck, Slide } from "./schema.js";
 export function Presenter({
-  deck,
-  slide,
+  deck: incomingDeck,
+  slide: incomingSlide,
   onSelect,
   onClose,
 }: {
@@ -12,8 +13,21 @@ export function Presenter({
   onSelect: (id: string) => void;
   onClose: () => void;
 }) {
+  // Freeze the presentation so live edits cannot change a running narration sequence.
+  const [deck] = useState(() => structuredClone(incomingDeck));
+  const [slideId, setSlideId] = useState(incomingSlide.id);
+  const [initialIndex] = useState(() =>
+    incomingDeck.slides.findIndex((s) => s.id === incomingSlide.id),
+  );
+  const slide = deck.slides.find((s) => s.id === slideId) ?? deck.slides[0];
+  const playback = useNarrationPlayback(deck, initialIndex, (id) => {
+    setSlideId(id);
+    onSelect(id);
+  });
   const dialogRef = useRef<HTMLElement>(null);
-  const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const hideControlsTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   useEffect(() => {
     dialogRef.current?.focus();
     return () => clearTimeout(hideControlsTimer.current);
@@ -21,7 +35,10 @@ export function Presenter({
   function revealControls() {
     setControlsVisible(true);
     clearTimeout(hideControlsTimer.current);
-    hideControlsTimer.current = setTimeout(() => setControlsVisible(false), 1800);
+    hideControlsTimer.current = setTimeout(
+      () => setControlsVisible(false),
+      1800,
+    );
   }
   const [controlsVisible, setControlsVisible] = useState(false);
   const [speaker, setSpeaker] = useState(false);
@@ -34,7 +51,7 @@ export function Presenter({
   }, []);
   function move(delta: number) {
     const target = deck.slides[index + delta];
-    if (target) onSelect(target.id);
+    if (target) playback.manual(index + delta);
   }
   return (
     <section
@@ -68,11 +85,21 @@ export function Presenter({
           deck={deck}
           slide={slide}
           replay={0}
-          onSelect={onSelect}
+          onSelect={(id) => {
+            const i = deck.slides.findIndex((s) => s.id === id);
+            if (i >= 0 && id !== slide.id) playback.manual(i);
+          }}
+          onReady={playback.ready}
           audience
           onExit={onClose}
         />
       </div>
+      {["blocked", "error"].includes(playback.state) && (
+        <div className="sc-audio-alert" role="alert">
+          {playback.message}{" "}
+          <button onClick={playback.resume}>Resume audio</button>
+        </div>
+      )}
       {speaker && (
         <aside className="sc-speaker-notes">
           <h2>Speaker view</h2>
@@ -84,6 +111,12 @@ export function Presenter({
           <p className="sc-note-text">
             {slide.notes || "No speaker notes for this slide."}
           </p>
+          {slide.narration?.script && (
+            <>
+              <h3>Narration script</h3>
+              <p className="sc-note-text">{slide.narration.script}</p>
+            </>
+          )}
           <h3>Next slide</h3>
           {next ? (
             <>
@@ -117,12 +150,39 @@ export function Presenter({
         <button onClick={() => move(1)} disabled={!next}>
           Next slide
         </button>
+        {playback.available && (
+          <>
+            <button onClick={() => playback.start(index)}>
+              Auto present from here
+            </button>
+            <button onClick={() => playback.start(0)}>
+              Auto present from beginning
+            </button>
+            {playback.state === "playing" || playback.state === "loading" ? (
+              <button onClick={playback.pause}>Pause narration</button>
+            ) : (
+              <button onClick={playback.resume}>Resume audio</button>
+            )}
+            <button onClick={playback.replay}>Replay / retry audio</button>
+            <label>
+              Volume
+              <input
+                aria-label="Narration volume"
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                defaultValue="1"
+                onChange={(e) => playback.volume(Number(e.target.value))}
+              />
+            </label>
+          </>
+        )}
+        <span role="status">{playback.message}</span>
         <button onClick={() => setSpeaker(!speaker)}>
           {speaker ? "Audience view" : "Speaker view"}
         </button>
-        <button onClick={onClose}>
-          Exit presentation
-        </button>
+        <button onClick={onClose}>Exit presentation</button>
       </nav>
     </section>
   );

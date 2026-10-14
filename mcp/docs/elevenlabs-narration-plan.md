@@ -146,3 +146,18 @@ Completion scenario: a user connects their own account, writes three independent
 - [Create speech](https://elevenlabs.io/docs/api-reference/text-to-speech/convert): per-voice text-to-audio generation and output settings.
 - [Models](https://elevenlabs.io/docs/overview/models): model capabilities and limits; confirm against the connected account when implementing.
 - [HTMLMediaElement.play](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement/play): asynchronous playback success/failure and autoplay-policy rejection.
+
+## Implementation status (v1.8 branch)
+
+Implemented editable scripts/silent slides, voice/model/settings UI, secure per-user
+Auth0 + restricted ElevenLabs API-key connection, PostgreSQL/private-S3 adapters,
+persisted job leases/deduplication/cancellation/retries, private audio grants,
+durable deck recovery, deletion/retention, and narrated presentation controls.
+The presenter freezes its snapshot, waits for preview readiness, advances on real
+audio completion, handles blocked playback and pauses on manual navigation/visibility.
+See `elevenlabs-setup.md` for configuration, operation and verification boundaries.
+
+This PR has not configured or deployed production identity/storage services and
+has not spent real ElevenLabs credits. Local verification uses signed identity and
+provider fixtures, actual PostgreSQL locking, and real Chromium audio with the built
+widget. Actual ChatGPT/Safari policy acceptance remains a staging release check.

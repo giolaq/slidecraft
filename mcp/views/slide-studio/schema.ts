@@ -55,6 +55,30 @@ export const elementSchema = z
   })
   .strict();
 export type SlideElement = z.infer<typeof elementSchema>;
+export const narrationSettingsSchema = z
+  .object({
+    voiceId: z
+      .string()
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .max(100),
+    modelId: z.string().max(100).default("eleven_multilingual_v2"),
+    settings: z
+      .object({
+        stability: z.number().min(0).max(1).default(0.5),
+        similarity_boost: z.number().min(0).max(1).default(0.75),
+        style: z.number().min(0).max(1).default(0),
+        use_speaker_boost: z.boolean().default(true),
+      })
+      .strict(),
+  })
+  .strict();
+export const slideNarrationSchema = z
+  .object({
+    script: z.string().max(10000).default(""),
+    mode: z.enum(["speech", "silent"]).default("speech"),
+    silentDurationMs: z.number().int().min(1000).max(300000).default(5000),
+  })
+  .strict();
 export const slideSchema = z
   .object({
     id: z
@@ -70,6 +94,7 @@ export const slideSchema = z
       "timeline",
       "custom",
     ]),
+    narration: slideNarrationSchema.optional(),
     colors: slideColorsSchema.optional(),
     elements: z.array(elementSchema).max(80).optional(),
     image: z
@@ -115,6 +140,7 @@ export const deckSchema = z
     title: short.min(1),
     subtitle: short.optional(),
     author: short.optional(),
+    narration: narrationSettingsSchema.optional(),
     theme: themeSchema,
     slides: z.array(slideSchema).min(1).max(30),
     css: z.string().max(24000).optional(),

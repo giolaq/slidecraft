@@ -1,3 +1,11 @@
+import {
+  oauth,
+  config as narrationConfig,
+  enabled as narrationEnabled,
+  requireNarration,
+  requireOwner,
+} from "./src/narration/config.js";
+import { registerNarrationRoutes } from "./src/narration/routes.js";
 import { importPhoto } from "./src/import-photo.js";
 import { latestDeck, publishDeck } from "./src/live-decks.js";
 import { applyEdits, editsSchema } from "./views/slide-studio/edits.js";
@@ -17,17 +25,27 @@ import {
 import demo from "./src/demo.json" with { type: "json" };
 import { render } from "./src/render.js";
 
-const server = new MCPServer({
+const narrationCsp = narrationConfig
+  ? {
+      connectDomains: [narrationConfig.origin],
+      resourceDomains: [narrationConfig.origin, "blob:"],
+    }
+  : {};
+const serverOptions = {
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.7.0",
+  version: "1.8.0",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
-    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance; this is not durable storage. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Slides with elements use a freeform visual canvas: edit /slides/INDEX/elements/INDEX/text, color, x, y, width, height, fontSize, bold, src or fit using revise-presentation. On these slides title/body are metadata; editing them does not change visible elements. Elements use a 1600 by 900 canvas and array order is stacking order. Preserve elements when editing. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
+    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance. When narration is configured, narration-enabled decks are additionally saved per authenticated user and can be reopened with list-narrated-decks and reopen-narrated-deck. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Slides with elements use a freeform visual canvas: edit /slides/INDEX/elements/INDEX/text, color, x, y, width, height, fontSize, bold, src or fit using revise-presentation. On these slides title/body are metadata; editing them does not change visible elements. Elements use a 1600 by 900 canvas and array order is stacking order. Preserve elements when editing. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
   websiteUrl: "https://github.com/giolaq/slidecraft",
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
-});
+};
+const server = oauth
+  ? new MCPServer({ ...serverOptions, oauth })
+  : new MCPServer(serverOptions);
+registerNarrationRoutes(server.app);
 // Read-only bearer-capability endpoint for panes whose host tool bridge is unavailable.
 server.app.use("/api/live-deck", async (c, next) => {
   c.header("Access-Control-Allow-Origin", "*");
@@ -59,13 +77,20 @@ const fail = (e: unknown) => ({
     { type: "text" as const, text: e instanceof Error ? e.message : String(e) },
   ],
 });
-function result(
+async function result(
   deck: Deck,
   message: string,
   selectedSlideId?: string,
   opening = false,
+  auth?: unknown,
 ) {
   deck = publishDeck(deck, opening);
+  if (
+    narrationEnabled &&
+    auth &&
+    (deck.narration || deck.slides.some((s) => s.narration))
+  )
+    await requireNarration().save(requireOwner(auth), deck);
   message += ` Revision ${deck.revision}. Preview theme: ${JSON.stringify(deck.theme)}. Connected studios automatically load this revision.`;
   return {
     content: [{ type: "text" as const, text: message }],
@@ -87,6 +112,7 @@ export const openSlides = server.tool(
     annotations: hints,
     icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
     view: {
+      csp: narrationCsp,
       name: "slide-studio",
       description:
         "Animated slides, outline, content editing, speaker notes, export, and an agent revision prompt.",
@@ -94,14 +120,15 @@ export const openSlides = server.tool(
       entrypoints: [{ type: "global" }, { type: "thread" }],
     },
   },
-  ({ deck }) => {
+  async ({ deck }, ctx) => {
     try {
       const d = checkDeck(deck ?? demo);
-      return result(
+      return await result(
         d,
         "Opened the current live deck. Download JSON to keep a copy.",
         undefined,
         true,
+        ctx.auth,
       );
     } catch (e) {
       return fail(e);
@@ -111,7 +138,7 @@ export const openSlides = server.tool(
 export const createDeck = server.tool(
   {
     name: "create-deck",
-    view: { name: "created-slides", prefersBorder: false },
+    view: { csp: narrationCsp, name: "created-slides", prefersBorder: false },
     title: "Create presentation",
     description:
       "Validate a new presentation from authored slides. Returns the complete deck and displays its preview.",
@@ -126,9 +153,9 @@ export const createDeck = server.tool(
     outputSchema: deckResultSchema,
     annotations: hints,
   },
-  (args) => {
+  async (args, ctx) => {
     try {
-      return result(
+      return await result(
         checkDeck({
           ...args,
           version: 1,
@@ -137,6 +164,9 @@ export const createDeck = server.tool(
           theme: args.theme ?? { mode: "dark", accent: "#cbff73" },
         }),
         "Created a new deck and returned its preview.",
+        undefined,
+        false,
+        ctx.auth,
       );
     } catch (e) {
       return fail(e);
@@ -146,7 +176,7 @@ export const createDeck = server.tool(
 export const updateSlide = server.tool(
   {
     name: "update-slide",
-    view: { name: "revised-slides", prefersBorder: false },
+    view: { csp: narrationCsp, name: "revised-slides", prefersBorder: false },
     title: "Revise one slide",
     description:
       "Shallow-merge fields into one slide by stable ID, preserving unrelated slides. Arrays replace previous values. Pass the complete latest deck and revision.",
@@ -159,12 +189,14 @@ export const updateSlide = server.tool(
     outputSchema: deckResultSchema,
     annotations: hints,
   },
-  ({ deck, slideId, expectedRevision, changes }) => {
+  async ({ deck, slideId, expectedRevision, changes }, ctx) => {
     try {
-      return result(
+      return await result(
         reviseSlide(deck, slideId, changes, expectedRevision),
         `Updated ${slideId}.`,
         slideId,
+        false,
+        ctx.auth,
       );
     } catch (e) {
       return fail(e);
@@ -174,7 +206,7 @@ export const updateSlide = server.tool(
 export const editDeck = server.tool(
   {
     name: "edit-deck",
-    view: { name: "edited-slides", prefersBorder: false },
+    view: { csp: narrationCsp, name: "edited-slides", prefersBorder: false },
     title: "Edit presentation structure",
     description:
       "Return a revised deck by adding, removing, or moving a slide, or changing title/theme. Connected studios automatically reload the revised shared deck.",
@@ -203,7 +235,7 @@ export const editDeck = server.tool(
     outputSchema: deckResultSchema,
     annotations: hints,
   },
-  ({ deck, expectedRevision, operation: op }) => {
+  async ({ deck, expectedRevision, operation: op }, ctx) => {
     try {
       const next = structuredClone(checkDeck(deck));
       if (next.revision !== expectedRevision)
@@ -224,7 +256,13 @@ export const editDeck = server.tool(
       if (op.type === "theme") next.theme = op.theme;
       if (op.type === "title") next.title = op.title;
       next.revision++;
-      return result(checkDeck(next), `Applied ${op.type} to the deck.`);
+      return await result(
+        checkDeck(next),
+        `Applied ${op.type} to the deck.`,
+        undefined,
+        false,
+        ctx.auth,
+      );
     } catch (e) {
       return fail(e);
     }
@@ -249,9 +287,9 @@ export const setTheme = server.tool(
     }),
     outputSchema: deckResultSchema,
     annotations: hints,
-    view: { name: "theme-preview", prefersBorder: false },
+    view: { csp: narrationCsp, name: "theme-preview", prefersBorder: false },
   },
-  ({ deck, expectedRevision, colors, slideId }) => {
+  async ({ deck, expectedRevision, colors, slideId }, ctx) => {
     try {
       const next = structuredClone(checkDeck(deck));
       if (next.revision !== expectedRevision)
@@ -269,10 +307,12 @@ export const setTheme = server.tool(
         next.theme = { ...next.theme, ...colors };
       }
       next.revision++;
-      return result(
+      return await result(
         checkDeck(next),
         `Applied colors ${JSON.stringify(colors)} to ${slideId ? `slide ${slideId}` : "the presentation"}.`,
         slideId,
+        false,
+        ctx.auth,
       );
     } catch (e) {
       return fail(e);
@@ -294,9 +334,13 @@ export const revisePresentation = server.tool(
     }),
     outputSchema: deckResultSchema,
     annotations: hints,
-    view: { name: "presentation-preview", prefersBorder: false },
+    view: {
+      csp: narrationCsp,
+      name: "presentation-preview",
+      prefersBorder: false,
+    },
   },
-  ({ deck, expectedRevision, edits, selectedSlideId }) => {
+  async ({ deck, expectedRevision, edits, selectedSlideId }, ctx) => {
     try {
       const next = applyEdits(deck, expectedRevision, edits);
       if (selectedSlideId && !next.slides.some((s) => s.id === selectedSlideId))
@@ -311,7 +355,13 @@ export const revisePresentation = server.tool(
         (affectedIndex !== undefined
           ? next.slides[Number(affectedIndex)]?.id
           : undefined);
-      return result(next, `Applied ${edits.length} edit operations.`, focus);
+      return await result(
+        next,
+        `Applied ${edits.length} edit operations.`,
+        focus,
+        false,
+        ctx.auth,
+      );
     } catch (e) {
       return fail(e);
     }
@@ -335,16 +385,19 @@ export const addPhoto = server.tool(
     }),
     outputSchema: deckResultSchema,
     annotations: { ...hints, openWorldHint: true },
-    view: { name: "photo-preview", prefersBorder: false },
+    view: { csp: narrationCsp, name: "photo-preview", prefersBorder: false },
   },
-  async ({ deck, expectedRevision, slideId, source, alt, caption, fit }) => {
+  async (
+    { deck, expectedRevision, slideId, source, alt, caption, fit },
+    ctx,
+  ) => {
     try {
       if (deck.revision !== expectedRevision)
         throw new Error("Revision mismatch. Read the latest live deck.");
       if (!deck.slides.some((s) => s.id === slideId))
         throw new Error("Unknown slide ID.");
       const src = await importPhoto(source);
-      return result(
+      return await result(
         reviseSlide(
           deck,
           slideId,
@@ -373,6 +426,8 @@ export const addPhoto = server.tool(
         ),
         "Embedded the optimized photo in the slide.",
         slideId,
+        false,
+        ctx.auth,
       );
     } catch (e) {
       return fail(e);
@@ -493,6 +548,10 @@ export const exportDeck = server.tool(
   ({ deck, format, includeNotes }) => {
     try {
       const d = structuredClone(checkDeck(deck));
+      if (format === "html") {
+        delete d.narration;
+        d.slides.forEach((s) => delete s.narration);
+      }
       if (format === "html" && !includeNotes)
         d.slides.forEach((s) => delete s.notes);
       const fileText =
@@ -543,5 +602,281 @@ server.prompt(
       },
     ],
   }),
+);
+// Narration tools require verified OAuth identity. A syncToken never grants billing access.
+const narrationInput = z.object({
+  deck: deckSchema,
+  snapshot: z.boolean().default(false),
+});
+const narrationOutput = z.object({ data: z.unknown() });
+const narrationResult = (data: unknown, message = "Narration updated.") => ({
+  content: [{ type: "text" as const, text: message }],
+  structuredContent: { data },
+});
+function currentNarrationDeck(deck: Deck) {
+  const latest = deck.syncToken ? latestDeck(deck.syncToken) : null;
+  if (latest && latest.revision !== deck.revision)
+    throw new Error(
+      "Revision conflict. Read the latest deck before narration actions.",
+    );
+  return checkDeck(latest ?? deck);
+}
+export const narrationStatus = server.tool(
+  {
+    name: "get-narration-status",
+    description:
+      "Read connection and per-slide narration readiness. Never generates paid audio.",
+    inputSchema: narrationInput,
+    outputSchema: narrationOutput,
+    annotations: { readOnlyHint: true },
+  },
+  async ({ deck, snapshot }, ctx) => {
+    try {
+      if (!narrationEnabled)
+        return narrationResult(
+          { enabled: false, connected: false, slides: [] },
+          "Narration requires server configuration.",
+        );
+      const owner = requireOwner(ctx.auth),
+        service = requireNarration();
+      return narrationResult({
+        enabled: true,
+        connected: await service.connected(owner),
+        jobId: await service.activeJob(owner, deck),
+        slides: await service.manifest(
+          owner,
+          snapshot ? deck : currentNarrationDeck(deck),
+          false,
+        ),
+      });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const beginNarrationConnection = server.tool(
+  {
+    name: "begin-narration-connection",
+    description:
+      "Open a secure external page to connect the signed-in user's ElevenLabs API key. Never request keys in chat or tool arguments.",
+    inputSchema: z.object({}),
+    outputSchema: narrationOutput,
+  },
+  async (_, ctx) => {
+    try {
+      const ticket = await requireNarration().beginConnection(
+        requireOwner(ctx.auth),
+      );
+      return {
+        ...narrationResult(
+          { opened: true },
+          "Open the private connection link in the widget.",
+        ),
+        _meta: {
+          url: narrationConfig!.origin + "/narration/connect?ticket=" + ticket,
+        },
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const disconnectNarration = server.tool(
+  {
+    name: "disconnect-narration",
+    description:
+      "Disconnect your ElevenLabs account and cancel pending generation. Saved recordings remain available.",
+    inputSchema: z.object({}),
+    outputSchema: narrationOutput,
+  },
+  async (_, ctx) => {
+    try {
+      await requireNarration().disconnect(requireOwner(ctx.auth));
+      return narrationResult({ connected: false });
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const listNarrationVoices = server.tool(
+  {
+    name: "list-narration-voices",
+    description:
+      "List voices and text-to-speech models available to your connected ElevenLabs account.",
+    inputSchema: z.object({}),
+    outputSchema: narrationOutput,
+    annotations: { readOnlyHint: true },
+  },
+  async (_, ctx) => {
+    try {
+      return narrationResult(
+        await requireNarration().catalog(requireOwner(ctx.auth)),
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const generateNarration = server.tool(
+  {
+    name: "generate-narration",
+    description:
+      "Generate paid narration ONLY after explicit user intent. Requires an editable script for every speech slide and configured voice. Existing matching clips are reused. Use a stable requestId UUID for retries of the same generation intent. retryUncertain confirms the user reviewed a previous unknown billing outcome and must use a fresh requestId.",
+    inputSchema: z.object({
+      deck: deckSchema,
+      slideIds: z.array(z.string()).optional(),
+      confirmGeneration: z.literal(true),
+      retryUncertain: z.boolean().default(false),
+      force: z.boolean().default(false),
+      requestId: z.string().uuid().optional(),
+    }),
+    outputSchema: narrationOutput,
+    annotations: { openWorldHint: true },
+  },
+  async ({ deck, slideIds, retryUncertain, force, requestId }, ctx) => {
+    try {
+      return narrationResult(
+        await requireNarration().generate(
+          requireOwner(ctx.auth),
+          currentNarrationDeck(deck),
+          slideIds,
+          retryUncertain,
+          force,
+          requestId,
+        ),
+        "Narration job saved. Poll status before claiming audio is ready.",
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const getNarrationJob = server.tool(
+  {
+    name: "get-narration-job",
+    description: "Read your durable narration job progress.",
+    inputSchema: z.object({ jobId: z.string() }),
+    outputSchema: narrationOutput,
+    annotations: { readOnlyHint: true },
+  },
+  async ({ jobId }, ctx) => {
+    try {
+      return narrationResult(
+        await requireNarration().job(requireOwner(ctx.auth), jobId),
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const cancelNarrationJob = server.tool(
+  {
+    name: "cancel-narration-job",
+    description:
+      "Cancel remaining narration. An already submitted slide may still incur ElevenLabs charges.",
+    inputSchema: z.object({ jobId: z.string() }),
+    outputSchema: narrationOutput,
+  },
+  async ({ jobId }, ctx) => {
+    try {
+      return narrationResult(
+        await requireNarration().cancel(requireOwner(ctx.auth), jobId),
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const narrationPlayback = server.tool(
+  {
+    name: "get-narration-playback",
+    description:
+      "Authorize playback of your generated audio asset. Short-lived URLs are returned in view-only metadata; never export them.",
+    inputSchema: z.object({ assetId: z.string().uuid() }),
+    outputSchema: narrationOutput,
+    annotations: { readOnlyHint: true },
+  },
+  async ({ assetId }, ctx) => {
+    try {
+      const grant = await requireNarration().playbackToken(
+        requireOwner(ctx.auth),
+        assetId,
+      );
+      return {
+        ...narrationResult({ assetId }),
+        _meta: {
+          url:
+            narrationConfig!.origin +
+            "/narration/audio?grant=" +
+            encodeURIComponent(grant),
+        },
+      };
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const savedNarrationDecks = server.tool(
+  {
+    name: "list-narrated-decks",
+    description:
+      "List your durable saved narration decks, including after a server restart.",
+    inputSchema: z.object({}),
+    outputSchema: narrationOutput,
+    annotations: { readOnlyHint: true },
+  },
+  async (_, ctx) => {
+    try {
+      return narrationResult(
+        await requireNarration().saved(requireOwner(ctx.auth)),
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const reopenNarrationDeck = server.tool(
+  {
+    name: "reopen-narrated-deck",
+    description:
+      "Reopen one of your durable narrated decks by the key from list-narrated-decks.",
+    inputSchema: z.object({ key: z.string() }),
+    outputSchema: deckResultSchema,
+    view: { csp: narrationCsp, name: "reopened-slides", prefersBorder: false },
+  },
+  async ({ key }, ctx) => {
+    try {
+      return await result(
+        await requireNarration().reopen(requireOwner(ctx.auth), key),
+        "Reopened your saved presentation.",
+        undefined,
+        true,
+        ctx.auth,
+      );
+    } catch (e) {
+      return fail(e);
+    }
+  },
+);
+export const deleteNarration = server.tool(
+  {
+    name: "delete-narration",
+    description:
+      "Delete saved narration for your deck key, or ALL your narration account data when key is omitted. This removes connection, scripts and unreferenced recordings for account deletion. Explicit confirmation required.",
+    inputSchema: z.object({
+      key: z.string().optional(),
+      confirmDeletion: z.literal(true),
+    }),
+    outputSchema: narrationOutput,
+    annotations: { destructiveHint: true },
+  },
+  async ({ key }, ctx) => {
+    try {
+      await requireNarration().deleteNarration(requireOwner(ctx.auth), key);
+      return narrationResult({ deleted: true });
+    } catch (e) {
+      return fail(e);
+    }
+  },
 );
 export default server;

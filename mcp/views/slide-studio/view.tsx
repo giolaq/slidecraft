@@ -1,3 +1,4 @@
+import { NarrationPanel } from "./narration-panel.js";
 import { VisualEditor } from "./visual-editor.js";
 import { Presenter } from "./presenter.js";
 import { editsSchema } from "./edits.js";
@@ -841,6 +842,9 @@ export function Studio({
               </button>
             </nav>
           )}
+          {!visualEditing && !presenting && (
+            <NarrationPanel deck={deck} slide={slide} onDeck={adopt} />
+          )}
           {showNotes && (
             <section className="sc-notes">
               <h3>Speaker notes</h3>
@@ -943,7 +947,7 @@ export function Studio({
           <div className="sc-bottom">
             <span>Revision {deck.revision} · Saved in view state</span>
             <span role="status" aria-label="Live connection status">
-              {syncStatus} · v1.7.0
+              {syncStatus} · v1.8.0
             </span>
             <label>
               <input
