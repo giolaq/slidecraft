@@ -583,13 +583,36 @@ try {
       120,
   );
   await visual.getByLabel("Element width", { exact: true }).fill("650");
+  for (const [button, field, expected] of [
+    ["Align left", "x", 0],
+    ["Align right", "x", 950],
+    ["Center horizontally", "x", 475],
+    ["Align top", "y", 0],
+    ["Align bottom", "y", 740],
+    ["Center vertically", "y", 370],
+  ]) {
+    await visual.getByRole("button", { name: button, exact: true }).click();
+    assert.equal(
+      Number(
+        await visual
+          .getByLabel(`Element ${field}`, { exact: true })
+          .inputValue(),
+      ),
+      expected,
+    );
+  }
   await visual
-    .getByLabel("Upload slide image")
-    .setInputFiles({
-      name: "visual-photo.png",
-      mimeType: "image/png",
-      buffer: imageBytes,
-    });
+    .getByLabel("Text alignment", { exact: true })
+    .selectOption("center");
+  assert.equal(
+    await movable.evaluate((el) => getComputedStyle(el).textAlign),
+    "center",
+  );
+  await visual.getByLabel("Upload slide image").setInputFiles({
+    name: "visual-photo.png",
+    mimeType: "image/png",
+    buffer: imageBytes,
+  });
   await visual
     .getByRole("button", { name: "Save visual edits", exact: true })
     .waitFor();
@@ -627,6 +650,9 @@ try {
     (el) => el.text === "Visually authored text",
   );
   assert.equal(authored.width, 650);
+  assert.equal(authored.x, 475);
+  assert.equal(authored.y, 370);
+  assert.equal(authored.textAlign, "center");
   const visualExport = await rpc("tools/call", {
     name: "export-deck",
     arguments: { deck: visualDeck, format: "html" },
@@ -642,6 +668,12 @@ try {
         .locator(`[data-element-id="${authored.id}"]`)
         .evaluate((el) => parseFloat(el.style.left))) - authored.x,
     ) < 0.01,
+  );
+  assert.equal(
+    await visualPage
+      .getByText("Visually authored text", { exact: true })
+      .evaluate((el) => getComputedStyle(el).textAlign),
+    "center",
   );
   await visualPage.close();
   await page.bringToFront();
