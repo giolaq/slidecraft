@@ -77,3 +77,62 @@ test("visual elements validate geometry, identity and image sources and export e
   d.slides[0].elements[0].type = "image";
   assert.throws(() => checkDeck(d), /needs a source/);
 });
+
+test("smart guides snap group edges and centers, clamp movement, and allow bypass", async () => {
+  const { snapMove } = await import("../views/slide-studio/alignment.ts");
+  const box = { x: 400, y: 300, width: 100, height: 80 };
+  const other = { x: 100, y: 100, width: 100, height: 80 };
+  const move = snapMove(box, -197, 0, [other], 6);
+  assert.equal(box.x + move.dx, 200);
+  assert.deepEqual(move.guides, [{ axis: "x", value: 200 }]);
+  assert.equal(box.x + snapMove(box, -197, 0, [other], 6, false).dx, 203);
+  assert.equal(box.x + snapMove(box, 348, 0, [], 6).dx, 750);
+  const clamped = snapMove(box, 2000, -1000, [], 6, false);
+  assert.equal(box.x + clamped.dx, 1500);
+  assert.equal(box.y + clamped.dy, 0);
+});
+test("relative alignment and equal gaps preserve unrelated items and dimensions", async () => {
+  const { alignItems, distributeItems } =
+    await import("../views/slide-studio/alignment.ts");
+  const make = (id: string, x: number, width: number) => ({
+    id,
+    x,
+    y: 100,
+    width,
+    height: 80,
+    type: "text" as const,
+    color: "#ffffff",
+    fontSize: 40,
+    bold: false,
+    fit: "contain" as const,
+  });
+  const items = [
+    make("a", 100, 100),
+    make("b", 400, 200),
+    make("c", 1000, 100),
+    make("other", 20, 40),
+  ];
+  const ids = ["a", "b", "c"];
+  const aligned = alignItems(items, ids, "center");
+  assert.deepEqual(
+    aligned.slice(0, 3).map((i) => i.x + i.width / 2),
+    [600, 600, 600],
+  );
+  assert.equal(aligned[3], items[3]);
+  assert.deepEqual(
+    aligned.map((i) => i.width),
+    items.map((i) => i.width),
+  );
+  const spaced = distributeItems(items, ids, "x");
+  assert.equal(spaced[0].x, 100);
+  assert.equal(spaced[2].x, 1000);
+  assert.equal(
+    spaced[1].x - (spaced[0].x + spaced[0].width),
+    spaced[2].x - (spaced[1].x + spaced[1].width),
+  );
+  assert.equal(spaced[3], items[3]);
+  assert.deepEqual(
+    items.map((i) => i.x),
+    [100, 400, 1000, 20],
+  );
+});

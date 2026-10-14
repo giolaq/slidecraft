@@ -125,3 +125,9 @@ Visual elements use the same 1600×900 coordinates in the editor, audience view,
 Select an element in Visual edit to align it to the slide’s left/right/top/bottom edges or horizontal/vertical center. Text alignment separately controls left, center, or right alignment inside a text box. Save visual edits preserves alignment in previews and exports.
 
 Image uploads adapt both encoding quality and dimensions to the embedded-image limit. Browsers without WebP encoding fall back to JPEG for opaque photos and smaller PNGs for transparent artwork, preserving transparency. Input limits remain 8 MB and 40 megapixels; saved image URLs remain at most 180,000 characters.
+
+## Smart guides and relative alignment
+
+Dragging an item or selection shows pink guide lines and snaps its edges or center to nearby items and the slide. Hold Alt to bypass snapping, or turn off **Snap to guides**. Shift-click (also Cmd/Ctrl-click) toggles items in the selection. Dragging or nudging a selection preserves its relative positions. Click the blank canvas to clear selection.
+
+With multiple items selected, alignment controls align them within their combined bounds. With at least three, **Distribute horizontally/vertically** creates equal gaps while keeping the outside items fixed; spread overlapping items farther apart first if there is insufficient space. A single selected item retains the slide-edge alignment controls. Guides are editor-only and are not exported. Save visual edits publishes the final positions to the shared deck.
