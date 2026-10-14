@@ -1,3 +1,4 @@
+import { readImage } from "./image-import.js";
 import { useEffect, useRef, useState } from "react";
 import type { Deck, Slide, SlideElement } from "./schema.js";
 
@@ -67,34 +68,6 @@ function fromSlide(slide: Slide, color: string): SlideElement[] {
     });
   if (slide.footer) elements.push(text(slide.footer, 80, 830, 1440, 40, 20));
   return elements;
-}
-async function readImage(file: File): Promise<string> {
-  if (
-    !/^image\/(png|jpeg|webp|gif)$/.test(file.type) ||
-    file.size > 8 * 1024 * 1024
-  )
-    throw new Error("Choose a PNG, JPEG, WebP or GIF under 8 MB.");
-  const bitmap = await createImageBitmap(file);
-  try {
-    if (bitmap.width * bitmap.height > 40_000_000)
-      throw new Error("Choose an image under 40 megapixels.");
-    for (const width of [1400, 1000, 700, 450]) {
-      const canvas = document.createElement("canvas"),
-        ratio = Math.min(1, width / bitmap.width, width / bitmap.height);
-      canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
-      canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
-      canvas
-        .getContext("2d")!
-        .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      const src = canvas.toDataURL("image/webp", 0.75);
-      if (src.length <= 180000) return src;
-    }
-    throw new Error(
-      "Image is too large after compression. Choose a smaller image.",
-    );
-  } finally {
-    bitmap.close();
-  }
 }
 export function VisualEditor({
   deck,

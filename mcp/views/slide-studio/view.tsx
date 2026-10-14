@@ -943,7 +943,7 @@ export function Studio({
           <div className="sc-bottom">
             <span>Revision {deck.revision} · Saved in view state</span>
             <span role="status" aria-label="Live connection status">
-              {syncStatus} · v1.6.1
+              {syncStatus} · v1.6.2
             </span>
             <label>
               <input

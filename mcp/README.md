@@ -123,3 +123,5 @@ Select **Visual edit** on a standard slide to move and resize text and images, p
 Visual elements use the same 1600×900 coordinates in the editor, audience view, and HTML export. Agents can edit `slide.elements` through `revise-presentation`, including individual text, positions, dimensions, and colors. Uploaded images are embedded so exports remain portable. If another editor or agent saves a newer revision while a manual draft is open, the stale save is rejected and the draft stays available.
 
 Select an element in Visual edit to align it to the slide’s left/right/top/bottom edges or horizontal/vertical center. Text alignment separately controls left, center, or right alignment inside a text box. Save visual edits preserves alignment in previews and exports.
+
+Image uploads adapt both encoding quality and dimensions to the embedded-image limit. Browsers without WebP encoding fall back to JPEG for opaque photos and smaller PNGs for transparent artwork, preserving transparency. Input limits remain 8 MB and 40 megapixels; saved image URLs remain at most 180,000 characters.

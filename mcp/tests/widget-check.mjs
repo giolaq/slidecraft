@@ -608,10 +608,54 @@ try {
     await movable.evaluate((el) => getComputedStyle(el).textAlign),
     "center",
   );
+  // Emulate Safari silently returning PNG for unsupported WebP encoding.
+  await frame.locator("html").evaluate(() => {
+    window.originalCanvasEncoder = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function (type, quality) {
+      return window.originalCanvasEncoder.call(
+        this,
+        type === "image/webp" ? "image/png" : type,
+        quality,
+      );
+    };
+  });
+  const noise = Buffer.alloc(700 * 700 * 4);
+  let seed = 123456;
+  for (let i = 0; i < noise.length; i++) {
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    noise[i] = i % 4 === 3 ? 255 : seed & 255;
+  }
+  const opaqueNoise = await sharp(noise, {
+    raw: { width: 700, height: 700, channels: 4 },
+  })
+    .png()
+    .toBuffer();
+  await visual
+    .getByLabel("Upload slide image")
+    .setInputFiles({
+      name: "opaque-photo.png",
+      mimeType: "image/png",
+      buffer: opaqueNoise,
+    });
+  await visual
+    .getByRole("button", {
+      name: "Select image: opaque-photo.png",
+      exact: true,
+    })
+    .waitFor();
+  for (let i = 3; i < noise.length; i += 4)
+    noise[i] = 80 + (noise[i - 1] % 160);
+  const transparentNoise = await sharp(noise, {
+    raw: { width: 700, height: 700, channels: 4 },
+  })
+    .png()
+    .toBuffer();
   await visual.getByLabel("Upload slide image").setInputFiles({
     name: "visual-photo.png",
     mimeType: "image/png",
-    buffer: imageBytes,
+    buffer: transparentNoise,
   });
   await visual
     .getByRole("button", { name: "Save visual edits", exact: true })
@@ -626,6 +670,9 @@ try {
     .getByRole("button", { name: "Save visual edits", exact: true })
     .click();
   await visual.waitFor({ state: "hidden" });
+  await frame.locator("html").evaluate(() => {
+    HTMLCanvasElement.prototype.toDataURL = window.originalCanvasEncoder;
+  });
   const visualPreview = frame.locator(".sc-canvas").frameLocator("iframe");
   await visualPreview
     .getByText("Visually authored text", { exact: true })
@@ -646,6 +693,22 @@ try {
     arguments: { syncToken: plainPhoto.structuredContent.deck.syncToken },
   });
   const visualDeck = visualLive.structuredContent.deck;
+  const transparentUpload = visualDeck.slides[0].elements.find(
+    (el) => el.text === "visual-photo.png",
+  );
+  const opaqueUpload = visualDeck.slides[0].elements.find(
+    (el) => el.text === "opaque-photo.png",
+  );
+  assert.ok(transparentUpload.src.startsWith("data:image/png;base64,"));
+  assert.ok(opaqueUpload.src.startsWith("data:image/jpeg;base64,"));
+  for (const upload of [transparentUpload, opaqueUpload])
+    assert.ok(upload.src.length <= 180000);
+  const transparentMeta = await sharp(
+    Buffer.from(transparentUpload.src.split(",")[1], "base64"),
+  ).metadata();
+  assert.ok(transparentMeta.hasAlpha);
+  assert.ok(transparentMeta.width < 450);
+
   const authored = visualDeck.slides[0].elements.find(
     (el) => el.text === "Visually authored text",
   );
