@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { useCallTool, useOpenExternal, useSendFollowUp, useHostContext, useViewTool } from "mcp-use/react";
+import {
+  useCallTool,
+  useOpenExternal,
+  useSendFollowUp,
+  useHostContext,
+  useViewTool,
+} from "mcp-use/react";
 import { z, type JSONType } from "zod";
 import type { Deck, Slide } from "./schema.js";
-import { deckNarrationWritingPrompt, validateNarrationEmotion } from "./narration-writing.js";
+import {
+  deckNarrationWritingPrompt,
+  validateNarrationEmotion,
+} from "./narration-writing.js";
 export type NarrationSlideStatus = {
   slideId: string;
   status: string;
@@ -24,12 +33,14 @@ export function NarrationPanel({
   deck,
   slide,
   onDeck,
+  active,
 }: {
   deck: Deck;
   slide: Slide;
   onDeck: (deck: Deck) => void;
+  active?: boolean;
 }) {
-  const [open, setOpen] = useState(false),
+  const [localOpen, setOpen] = useState(false),
     [status, setStatus] = useState<NarrationStatus>(),
     [catalog, setCatalog] = useState<Catalog>(),
     [message, setMessage] = useState(""),
@@ -37,6 +48,7 @@ export function NarrationPanel({
     [review, setReview] = useState(false),
     [job, setJob] = useState<string>(),
     [preview, setPreview] = useState<string>();
+  const open = active ?? localOpen;
   const [draft, setDraft] = useState(
     slide.narration ?? {
       script: "",
@@ -69,6 +81,8 @@ export function NarrationPanel({
     revise = useCallTool("revise-presentation"),
     playback = useCallTool("get-narration-playback"),
     live = useCallTool("get-live-deck");
+  const catalogCall = useRef(voices.callTool);
+  catalogCall.current = voices.callTool;
   const openExternal = useOpenExternal();
   const followUp = useSendFollowUp();
   const { hostCapabilities } = useHostContext();
@@ -76,43 +90,90 @@ export function NarrationPanel({
   latest.current = deck;
   const editor = useRef({ slideId: slide.id, dirty });
   editor.current = { slideId: slide.id, dirty };
-  useViewTool({
-    name: "save-visible-narration",
-    description: "Save an agent-written narration script into the open studio's narration field. After Write Narration, call this with the requested slideId and script; it persists the script and immediately fills the editor. Does not generate audio or spend credits. Preserves other slides and voice settings.",
-    inputSchema: z.object({ slideId: z.string(), script: z.string().trim().min(1).max(10000), requireEmotionTags: z.boolean().default(false) }),
-  }, async ({ slideId, script, requireEmotionTags }) => {
-    try {
-      if (editor.current.slideId === slideId && editor.current.dirty)
-        throw new Error("There are new unsaved narration edits. Ask the user to save or discard them before replacing the script.");
-      let current = latest.current;
-      if (current.syncToken) {
-        const response = await live.callTool({ syncToken: current.syncToken });
-        if (!response.structuredContent.deck) throw new Error("Live session expired. Reopen this presentation before writing narration.");
-        current = response.structuredContent.deck;
+  useViewTool(
+    {
+      name: "save-visible-narration",
+      description:
+        "Save an agent-written narration script into the open studio's narration field. After Write Narration, call this with the requested slideId and script; it persists the script and immediately fills the editor. Does not generate audio or spend credits. Preserves other slides and voice settings.",
+      inputSchema: z.object({
+        slideId: z.string(),
+        script: z.string().trim().min(1).max(10000),
+        requireEmotionTags: z.boolean().default(false),
+      }),
+    },
+    async ({ slideId, script, requireEmotionTags }) => {
+      try {
+        if (editor.current.slideId === slideId && editor.current.dirty)
+          throw new Error(
+            "There are new unsaved narration edits. Ask the user to save or discard them before replacing the script.",
+          );
+        let current = latest.current;
+        if (current.syncToken) {
+          const response = await live.callTool({
+            syncToken: current.syncToken,
+          });
+          if (!response.structuredContent.deck)
+            throw new Error(
+              "Live session expired. Reopen this presentation before writing narration.",
+            );
+          current = response.structuredContent.deck;
+        }
+        if (requireEmotionTags)
+          validateNarrationEmotion(
+            script,
+            current.narration?.modelId ?? "eleven_multilingual_v2",
+          );
+        const index = current.slides.findIndex((s) => s.id === slideId);
+        if (index < 0) throw new Error("The requested slide no longer exists.");
+        const result = await revise.callTool({
+          deck: current,
+          expectedRevision: current.revision,
+          selectedSlideId: slideId,
+          edits: [
+            {
+              op: "add",
+              path: `/slides/${index}/narration`,
+              value: {
+                ...current.slides[index].narration,
+                script,
+                mode: "speech",
+                silentDurationMs:
+                  current.slides[index].narration?.silentDurationMs ?? 5000,
+              },
+            },
+          ],
+        });
+        const saved = result.structuredContent.deck;
+        onDeck(saved);
+        if (editor.current.slideId === slideId && !editor.current.dirty) {
+          setDraft(saved.slides.find((s) => s.id === slideId)!.narration!);
+          baseline.current = { revision: saved.revision, slideId };
+        }
+        setReview(false);
+        setMessage(
+          "Narration written and saved. Review the script below before generating audio.",
+        );
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Narration saved to the requested slide and displayed in the studio's narration field.",
+            },
+          ],
+        };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: error instanceof Error ? error.message : String(error),
+            },
+          ],
+        };
       }
-      if (requireEmotionTags) validateNarrationEmotion(script, current.narration?.modelId ?? "eleven_multilingual_v2");
-      const index = current.slides.findIndex(s => s.id === slideId);
-      if (index < 0) throw new Error("The requested slide no longer exists.");
-      const result = await revise.callTool({
-        deck: current, expectedRevision: current.revision, selectedSlideId: slideId,
-        edits: [{ op: "add", path: `/slides/${index}/narration`, value: {
-          ...current.slides[index].narration, script, mode: "speech",
-          silentDurationMs: current.slides[index].narration?.silentDurationMs ?? 5000,
-        } }],
-      });
-      const saved = result.structuredContent.deck;
-      onDeck(saved);
-      if (editor.current.slideId === slideId && !editor.current.dirty) {
-        setDraft(saved.slides.find(s => s.id === slideId)!.narration!);
-        baseline.current = { revision: saved.revision, slideId };
-      }
-      setReview(false);
-      setMessage("Narration written and saved. Review the script below before generating audio.");
-      return { content: [{ type: "text" as const, text: "Narration saved to the requested slide and displayed in the studio's narration field." }] };
-    } catch (error) {
-      return { isError: true, content: [{ type: "text" as const, text: error instanceof Error ? error.message : String(error) }] };
-    }
-  });
+    },
+  );
   useEffect(() => {
     if (!dirty) {
       setDraft(
@@ -170,6 +231,26 @@ export function NarrationPanel({
       clearInterval(id);
     };
   }, [open]);
+  useEffect(() => {
+    if (!open || !status?.connected || catalog) return;
+    let disposed = false;
+    void catalogCall
+      .current({})
+      .then((response) => {
+        if (!disposed) setCatalog(response.structuredContent.data as Catalog);
+      })
+      .catch((error) => {
+        if (!disposed)
+          setMessage(
+            error instanceof Error
+              ? error.message
+              : "Could not load voices. Use Refresh voices under Manage connection to retry.",
+          );
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [open, status?.connected, catalog]);
   useEffect(() => {
     setPreview(undefined);
   }, [slide.id]);
@@ -242,9 +323,11 @@ export function NarrationPanel({
       ) ?? []);
   return (
     <section className="sc-narration">
-      <button onClick={() => setOpen(!open)} aria-expanded={open}>
-        Narration
-      </button>
+      {active === undefined && (
+        <button onClick={() => setOpen(!open)} aria-expanded={open}>
+          Narration
+        </button>
+      )}
       {open && (
         <div>
           <h3>ElevenLabs narration</h3>
@@ -255,88 +338,114 @@ export function NarrationPanel({
                 ? "Your ElevenLabs account is connected."
                 : "Connect your own ElevenLabs account to generate audio."}
           </p>
-          <button
-            disabled={busy || status?.enabled === false}
-            onClick={() =>
-              void run(async () => {
-                const r = await connect.callTool({});
-                const url = r._meta?.url;
-                if (typeof url !== "string")
-                  throw new Error("No connection link returned.");
-                await openExternal({ url });
-              })
-            }
-          >
-            {status?.connected ? "Replace connection" : "Connect ElevenLabs"}
-          </button>
-          {status?.connected && (
-            <>
+          {!status?.connected ? (
+            <button
+              disabled={busy || status?.enabled === false}
+              onClick={() =>
+                void run(async () => {
+                  const response = await connect.callTool({});
+                  if (typeof response._meta?.url !== "string")
+                    throw new Error("No connection link returned.");
+                  await openExternal({ url: response._meta.url });
+                })
+              }
+            >
+              Connect ElevenLabs
+            </button>
+          ) : (
+            <details className="sc-account-options">
+              <summary>Manage connection</summary>
               <button
-                disabled={busy}
+                disabled={busy || status?.enabled === false}
                 onClick={() =>
                   void run(async () => {
-                    await disconnect.callTool({});
-                    setCatalog(undefined);
-                    setStatus((s) => (s ? { ...s, connected: false } : s));
+                    const r = await connect.callTool({});
+                    const url = r._meta?.url;
+                    if (typeof url !== "string")
+                      throw new Error("No connection link returned.");
+                    await openExternal({ url });
                   })
                 }
               >
-                Disconnect
+                {status?.connected
+                  ? "Replace connection"
+                  : "Connect ElevenLabs"}
               </button>
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void run(async () => {
-                    const r = await voices.callTool({});
-                    setCatalog(r.structuredContent.data as Catalog);
-                  })
-                }
-              >
-                Load voices
-              </button>
-            </>
+              {status?.connected && (
+                <>
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void run(async () => {
+                        await disconnect.callTool({});
+                        setCatalog(undefined);
+                        setStatus((s) => (s ? { ...s, connected: false } : s));
+                      })
+                    }
+                  >
+                    Disconnect
+                  </button>
+                </>
+              )}
+              {status?.connected && (
+                <button
+                  className="sc-load-voices"
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      const response = await voices.callTool({});
+                      setCatalog(response.structuredContent.data as Catalog);
+                    })
+                  }
+                >
+                  Refresh voices
+                </button>
+              )}
+            </details>
           )}
-          <label>
-            Voice
-            <select
-              aria-label="Narration voice"
-              value={settings.voiceId}
-              onChange={(e) => {
-                setSettings({ ...settings, voiceId: e.target.value });
-                setDirty(true);
-              }}
-            >
-              <option value="">Choose a voice</option>
-              {!catalog && settings.voiceId && (
-                <option value={settings.voiceId}>{settings.voiceId}</option>
-              )}
-              {catalog?.voices.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Model
-            <select
-              aria-label="Narration model"
-              value={settings.modelId}
-              onChange={(e) => {
-                setSettings({ ...settings, modelId: e.target.value });
-                setDirty(true);
-              }}
-            >
-              {!catalog && (
-                <option value={settings.modelId}>{settings.modelId}</option>
-              )}
-              {catalog?.models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="sc-voice-selectors">
+            <label>
+              Voice
+              <select
+                aria-label="Narration voice"
+                value={settings.voiceId}
+                onChange={(e) => {
+                  setSettings({ ...settings, voiceId: e.target.value });
+                  setDirty(true);
+                }}
+              >
+                <option value="">Choose a voice</option>
+                {!catalog && settings.voiceId && (
+                  <option value={settings.voiceId}>{settings.voiceId}</option>
+                )}
+                {catalog?.voices.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Model
+              <select
+                aria-label="Narration model"
+                value={settings.modelId}
+                onChange={(e) => {
+                  setSettings({ ...settings, modelId: e.target.value });
+                  setDirty(true);
+                }}
+              >
+                {!catalog && (
+                  <option value={settings.modelId}>{settings.modelId}</option>
+                )}
+                {catalog?.models.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <details>
             <summary>Voice settings</summary>
             {(["stability", "similarity_boost", "style"] as const).map(
@@ -436,46 +545,63 @@ export function NarrationPanel({
             </>
           )}
           <button
-            disabled={busy || !hostCapabilities?.message || deck.slides.every(s => s.narration?.mode === "silent")}
-            onClick={() => void run(async () => {
-              const modelId = settings.modelId;
-              if (dirty) await save();
-              await followUp({ prompt: deckNarrationWritingPrompt(latest.current, modelId) });
-              setMessage("Asked your agent to write and save narration for all speech slides. Each script appears as it is saved.");
-            })}
+            className="sc-primary"
+            disabled={
+              busy ||
+              !hostCapabilities?.message ||
+              deck.slides.every((s) => s.narration?.mode === "silent")
+            }
+            onClick={() =>
+              void run(async () => {
+                const modelId = settings.modelId;
+                if (dirty) await save();
+                await followUp({
+                  prompt: deckNarrationWritingPrompt(latest.current, modelId),
+                });
+                setMessage(
+                  "Asked your agent to write and save narration for all speech slides. Each script appears as it is saved.",
+                );
+              })
+            }
           >
             Write Narration
           </button>
-          <p>{hostCapabilities?.message
-            ? "Writes scripts for the whole presentation, including slides with existing scripts. Silent slides stay silent. Review the scripts before generating audio."
-            : "Ask your agent in chat to write narration for all speech slides, or enter scripts manually."}</p>
-          <button disabled={busy || !dirty} onClick={() => void run(save)}>
-            Save narration
-          </button>
+          <p>
+            {hostCapabilities?.message
+              ? "Writes scripts for the whole presentation, including slides with existing scripts. Silent slides stay silent. Review the scripts before generating audio."
+              : "Ask your agent in chat to write narration for all speech slides, or enter scripts manually."}
+          </p>
+          {dirty && (
+            <button disabled={busy} onClick={() => void run(save)}>
+              Save narration
+            </button>
+          )}
           {dirty && (
             <button onClick={() => setDirty(false)}>
               Discard narration draft
             </button>
           )}
-          <button
-            disabled={busy || current?.status !== "ready" || dirty}
-            onClick={() =>
-              void run(async () => {
-                const r = await playback.callTool({
-                  assetId: current!.assetId!,
-                });
-                const url = r._meta?.url;
-                if (typeof url !== "string")
-                  throw new Error("Missing audio URL.");
-                const response = await fetch(url);
-                if (!response.ok)
-                  throw new Error("Audio unavailable. Retry preview.");
-                setPreview(URL.createObjectURL(await response.blob()));
-              })
-            }
-          >
-            Preview audio
-          </button>
+          {current?.status === "ready" && (
+            <button
+              disabled={busy || dirty}
+              onClick={() =>
+                void run(async () => {
+                  const r = await playback.callTool({
+                    assetId: current!.assetId!,
+                  });
+                  const url = r._meta?.url;
+                  if (typeof url !== "string")
+                    throw new Error("Missing audio URL.");
+                  const response = await fetch(url);
+                  if (!response.ok)
+                    throw new Error("Audio unavailable. Retry preview.");
+                  setPreview(URL.createObjectURL(await response.blob()));
+                })
+              }
+            >
+              Preview audio
+            </button>
+          )}
           {preview && <audio controls src={preview} />}
           <p>
             {status?.slides.filter(
@@ -483,17 +609,20 @@ export function NarrationPanel({
             ).length ?? 0}{" "}
             / {deck.slides.length} slides ready
           </p>
-          <ul>
-            {status?.slides.map((s) => (
-              <li key={s.slideId}>
-                {deck.slides.find((sl) => sl.id === s.slideId)?.title}:{" "}
-                {s.status === "missing"
-                  ? "Not generated / needs regeneration"
-                  : s.status}
-                {s.error ? ` — ${s.error}` : ""}
-              </li>
-            ))}
-          </ul>
+          <details className="sc-slide-readiness">
+            <summary>Recording status by slide</summary>
+            <ul>
+              {status?.slides.map((s) => (
+                <li key={s.slideId}>
+                  {deck.slides.find((sl) => sl.id === s.slideId)?.title}:{" "}
+                  {s.status === "missing"
+                    ? "Not generated / needs regeneration"
+                    : s.status}
+                  {s.error ? ` — ${s.error}` : ""}
+                </li>
+              ))}
+            </ul>
+          </details>
           <button
             disabled={busy || dirty || !status?.connected || !deck.narration}
             onClick={() => {
@@ -504,23 +633,26 @@ export function NarrationPanel({
           >
             Generate narration…
           </button>
-          <button
-            disabled={
-              busy ||
-              dirty ||
-              !status?.connected ||
-              !deck.narration ||
-              !slide.narration?.script.trim() ||
-              slide.narration?.mode === "silent"
-            }
-            onClick={() => {
-              setRegenerate(true);
-              requestId.current = crypto.randomUUID();
-              setReview(true);
-            }}
-          >
-            Regenerate this slide…
-          </button>
+          <details className="sc-recording-options">
+            <summary>More audio options</summary>
+            <button
+              disabled={
+                busy ||
+                dirty ||
+                !status?.connected ||
+                !deck.narration ||
+                !slide.narration?.script.trim() ||
+                slide.narration?.mode === "silent"
+              }
+              onClick={() => {
+                setRegenerate(true);
+                requestId.current = crypto.randomUUID();
+                setReview(true);
+              }}
+            >
+              Regenerate this slide…
+            </button>
+          </details>
           {job && (
             <button
               disabled={busy}

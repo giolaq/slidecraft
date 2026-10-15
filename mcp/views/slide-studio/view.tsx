@@ -251,8 +251,20 @@ export function Studio({
     previous = useRef(signature),
     mounted = useRef(false);
   const [replay, setReplay] = useState(0),
-    [editing, setEditing] = useState(false),
-    [showNotes, setShowNotes] = useState(false);
+    [activePanel, setActivePanel] = useState<
+      "edit" | "notes" | "narration" | null
+    >(null);
+  const editing = activePanel === "edit";
+  const showNotes = activePanel === "notes";
+  function setEditing(value: boolean | ((previous: boolean) => boolean)) {
+    setActivePanel((previous) =>
+      (typeof value === "function" ? value(previous === "edit") : value)
+        ? "edit"
+        : previous === "edit"
+          ? null
+          : previous,
+    );
+  }
   const [draft, setDraft] = useState({ title: "", body: "", notes: "" }),
     [prompt, setPrompt] = useState(""),
     [notice, setNotice] = useState(""),
@@ -264,6 +276,7 @@ export function Studio({
     } | null>(null),
     [includeNotes, setIncludeNotes] = useState(false);
   const importInput = useRef<HTMLInputElement>(null);
+  const editDraftOwner = useRef<string | null>(null);
   const update = useCallTool("update-slide"),
     edit = useCallTool("edit-deck"),
     exporter = useCallTool("export-deck"),
@@ -529,6 +542,7 @@ export function Studio({
       });
       adopt(r.structuredContent.deck);
       setEditing(false);
+      editDraftOwner.current = null;
       setNotice("Slide updated.");
     });
   }
@@ -605,7 +619,25 @@ export function Studio({
     <main
       className="sc-studio"
       data-mode={displayMode}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest(".sc-file-menu")) {
+          const menu =
+            e.currentTarget.querySelector<HTMLDetailsElement>(".sc-file-menu");
+          if (menu) menu.open = false;
+        }
+      }}
       onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          const menu = e.currentTarget.querySelector<HTMLDetailsElement>(
+            ".sc-file-menu[open]",
+          );
+          if (menu) {
+            menu.open = false;
+            menu.querySelector("summary")?.focus();
+            e.stopPropagation();
+            return;
+          }
+        }
         if (/INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName))
           return;
         if (e.key === "ArrowRight" && position < deck.slides.length - 1) {
@@ -643,32 +675,67 @@ export function Studio({
           </span>
           slidecraft
         </div>
-        <span className="sc-badge">STUDIO</span>
+        <span className="sc-deck-name" title={deck.title}>
+          {deck.title}
+        </span>
         <div className="sc-spacer" />
+        <details className="sc-file-menu">
+          <summary>
+            File <span aria-hidden="true">⌄</span>
+          </summary>
+          <div
+            className="sc-file-actions"
+            onClick={(e) => {
+              if ((e.target as HTMLElement).closest("button")) {
+                const menu = e.currentTarget.closest("details");
+                if (menu) {
+                  menu.open = false;
+                  menu.querySelector("summary")?.focus();
+                }
+              }
+            }}
+          >
+            <span className="sc-menu-label">YOUR PRESENTATION</span>
+            <button
+              disabled={busy || Boolean(visualEditing)}
+              onClick={() => importInput.current?.click()}
+            >
+              Import JSON
+            </button>
+            <button
+              disabled={busy || Boolean(visualEditing)}
+              onClick={() => void exportFile("json")}
+            >
+              Save JSON
+            </button>
+            <button
+              disabled={busy || Boolean(visualEditing)}
+              onClick={() => void exportFile("html")}
+            >
+              Export HTML
+            </button>
+            <label>
+              <input
+                type="checkbox"
+                checked={includeNotes}
+                onChange={(e) => setIncludeNotes(e.target.checked)}
+              />{" "}
+              Include notes in HTML
+            </label>
+            <button onClick={() => setReplay((x) => x + 1)}>
+              Replay motion
+            </button>
+          </div>
+        </details>
         <button
+          className="sc-primary"
           disabled={Boolean(visualEditing)}
           onClick={() => void startPresenting()}
         >
+          <svg aria-hidden="true" width="10" height="10" viewBox="0 0 10 10">
+            <path d="M1 0 10 5 1 10Z" fill="currentColor" />
+          </svg>{" "}
           Present
-        </button>
-        <button
-          disabled={busy || Boolean(visualEditing)}
-          onClick={() => importInput.current?.click()}
-        >
-          Import JSON
-        </button>
-        <button
-          disabled={busy || Boolean(visualEditing)}
-          onClick={() => void exportFile("json")}
-        >
-          Save JSON
-        </button>
-        <button
-          className="sc-primary"
-          disabled={busy || Boolean(visualEditing)}
-          onClick={() => void exportFile("html")}
-        >
-          Export HTML
         </button>
         {availableDisplayModes.includes("fullscreen") && (
           <button
@@ -758,11 +825,10 @@ export function Studio({
           <div className="sc-heading">
             <div>
               <h2>{deck.title}</h2>
-              <p>Make the next version better.</p>
+              <p>
+                Slide {position + 1} of {deck.slides.length}
+              </p>
             </div>
-            <button onClick={() => setReplay((x) => x + 1)}>
-              Replay motion
-            </button>
           </div>
           {visualEditing ? (
             <VisualEditor
@@ -791,24 +857,6 @@ export function Studio({
             />
           )}
           {!visualEditing && (
-            <button
-              disabled={busy || Boolean(slide.html || deck.css || deck.script)}
-              title={
-                slide.html || deck.css || deck.script
-                  ? "Custom HTML/CSS/JavaScript slides use agent editing."
-                  : "Move, resize, and style slide elements"
-              }
-              onClick={() =>
-                setVisualEditing({
-                  deck: structuredClone(deck),
-                  slide: structuredClone(slide),
-                })
-              }
-            >
-              Visual edit
-            </button>
-          )}
-          {!visualEditing && (
             <nav className="sc-navigation" aria-label="Slides">
               <button
                 disabled={position === 0}
@@ -826,34 +874,103 @@ export function Studio({
                 Next →
               </button>
               <div className="sc-spacer" />
-              <button onClick={() => setShowNotes((x) => !x)}>
-                {showNotes ? "Hide notes" : "Speaker notes"}
-              </button>
               <button
-                onClick={() => {
-                  setDraft({
-                    title: slide.title,
-                    body: slide.body ?? "",
-                    notes: slide.notes ?? "",
-                  });
-                  setEditing((x) => !x);
-                }}
+                disabled={
+                  busy || Boolean(slide.html || deck.css || deck.script)
+                }
+                title={
+                  slide.html || deck.css || deck.script
+                    ? "Custom HTML/CSS/JavaScript slides use agent editing."
+                    : "Move, resize, and style slide elements"
+                }
+                onClick={() =>
+                  setVisualEditing({
+                    deck: structuredClone(deck),
+                    slide: structuredClone(slide),
+                  })
+                }
               >
-                Edit slide
+                Visual edit
               </button>
             </nav>
           )}
           {!visualEditing && !presenting && (
-            <NarrationPanel deck={deck} slide={slide} onDeck={adopt} />
+            <div
+              className="sc-panel-switcher"
+              role="group"
+              aria-label="Slide tools"
+            >
+              <button
+                aria-expanded={editing}
+                aria-controls="sc-edit-panel"
+                className={editing ? "is-active" : ""}
+                onClick={() => {
+                  const owner = `${deck.id}:${slide.id}`;
+                  if (!editing && editDraftOwner.current !== owner) {
+                    setDraft({
+                      title: slide.title,
+                      body: slide.body ?? "",
+                      notes: slide.notes ?? "",
+                    });
+                    editDraftOwner.current = owner;
+                  }
+                  setEditing((previous) => !previous);
+                }}
+              >
+                Edit slide
+              </button>
+              <button
+                aria-expanded={activePanel === "narration"}
+                aria-controls="sc-narration-panel"
+                className={activePanel === "narration" ? "is-active" : ""}
+                onClick={() =>
+                  setActivePanel((previous) =>
+                    previous === "narration" ? null : "narration",
+                  )
+                }
+              >
+                Narration
+              </button>
+              <button
+                aria-expanded={showNotes}
+                aria-controls="sc-notes-panel"
+                className={showNotes ? "is-active" : ""}
+                onClick={() =>
+                  setActivePanel((previous) =>
+                    previous === "notes" ? null : "notes",
+                  )
+                }
+              >
+                Speaker notes
+              </button>
+            </div>
           )}
+          <div
+            id="sc-narration-panel"
+            hidden={
+              activePanel !== "narration" ||
+              Boolean(visualEditing) ||
+              presenting
+            }
+          >
+            <NarrationPanel
+              deck={deck}
+              slide={slide}
+              onDeck={adopt}
+              active={
+                activePanel === "narration" && !visualEditing && !presenting
+              }
+            />
+          </div>
           {showNotes && (
-            <section className="sc-notes">
+            <section id="sc-notes-panel" className="sc-notes">
               <h3>Speaker notes</h3>
               <p>{slide.notes || "No notes for this slide yet."}</p>
             </section>
           )}
           {editing && !visualEditing && (
             <form
+              id="sc-edit-panel"
               className="sc-edit"
               onSubmit={(e) => {
                 e.preventDefault();
@@ -901,7 +1018,13 @@ export function Studio({
                 >
                   Apply changes
                 </button>
-                <button type="button" onClick={() => setEditing(false)}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    editDraftOwner.current = null;
+                    setEditing(false);
+                  }}
+                >
                   Cancel
                 </button>
               </div>
@@ -921,7 +1044,7 @@ export function Studio({
             }}
           >
             <label htmlFor="revision-prompt">
-              Think out loud. Shape the next version.
+              What would you like to change?
             </label>
             <div>
               <input
@@ -950,14 +1073,6 @@ export function Studio({
             <span role="status" aria-label="Live connection status">
               {syncStatus} · v{packageInfo.version}
             </span>
-            <label>
-              <input
-                type="checkbox"
-                checked={includeNotes}
-                onChange={(e) => setIncludeNotes(e.target.checked)}
-              />{" "}
-              Include notes in HTML
-            </label>
           </div>
           {(deck.css || deck.script) && (
             <p className="sc-subtle">

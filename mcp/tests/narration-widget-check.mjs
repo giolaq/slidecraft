@@ -195,7 +195,6 @@ try {
   const f = page.frameLocator("iframe");
   await f.locator(".sc-studio").waitFor();
   await f.getByRole("button", { name: "Narration", exact: true }).click();
-  await f.getByRole("button", { name: "Load voices", exact: true }).click();
   await f
     .getByLabel("Narration voice", { exact: true })
     .selectOption("test-voice");
@@ -246,6 +245,11 @@ try {
   await f
     .getByLabel("Narration script", { exact: true })
     .fill("This is my independent narration script.");
+  await f.getByRole("button", {name: "Speaker notes", exact: true}).click();
+  assert.equal(await f.getByLabel("Narration script", {exact: true}).isVisible(), false);
+  await f.getByRole("button", {name: "Narration", exact: true}).click();
+  assert.equal(await f.getByLabel("Narration script", {exact: true}).inputValue(), "This is my independent narration script.");
+
   await page.evaluate(() => document.querySelector("iframe").contentWindow.postMessage({
     jsonrpc: "2.0", id: 992, method: "tools/call", params: {
       name: "save-visible-narration", arguments: {slideId: "one", script: "Must not overwrite the user's draft."}

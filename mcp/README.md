@@ -281,7 +281,7 @@ discover the tools before login, but every tool invocation requires verified OAu
 2. On the external page, sign in with the **same Auth0 account** used for the ChatGPT connection.
 3. In [ElevenLabs API-key settings](https://elevenlabs.io/app/settings/api-keys), create a restricted key with **Voices read**, **Models read**, and **Text to Speech** access, plus a suitable credit limit.
 4. Copy the **secret API key value**, not the **key ID** shown in the key list. The secret may be shown only when you create the key; create a new key if you cannot retrieve it. Paste it only into Slidecraft's external connection form, never into chat or deck JSON.
-5. Submit within 10 minutes and wait for **Connected. Close this tab…**. Then return to Slidecraft, reopen the Narration panel if needed, wait for connection status to update, and click **Load voices**.
+5. Submit within 10 minutes and wait for **Connected. Close this tab…**. Then return to Slidecraft, reopen the Narration panel if needed, wait for connection status to update. Voices load automatically; use **Manage connection → Refresh voices** to retry if needed.
 
 The current integration uses the standard `https://api.elevenlabs.io` endpoint;
 per-user data-residency endpoints are not currently configurable.
@@ -334,3 +334,7 @@ existing single-instance, 24-hour session storage. See the
 ### Create a new deck without replacing the current one
 
 When the agent finishes creating a presentation, it asks whether to load it now or keep it for later. The creation card offers **Load now**, **Keep for later**, and **Download JSON**. The new deck is not loaded until you choose. A complete JSON copy is saved to your signed-in account on the configured cloud service, even without ElevenLabs or narration. You can retrieve it through the saved-deck tools (currently named `list-narrated-decks` and `reopen-narrated-deck`). On a local server without durable account storage, download the JSON to keep a permanent copy. **Show JSON backup** provides a fallback when a host blocks downloads. Normal edits to your current deck continue to update it directly.
+
+### Finding your way around the studio
+
+The canvas is the main workspace, with the slide list on the left (a horizontal strip on small screens). **Present** stays in the header. **File** contains Import JSON, Save JSON, Export HTML, the notes export option and Replay motion. Below the canvas, choose **Edit slide**, **Narration** or **Speaker notes** to open one contextual panel at a time; **Visual edit** stays next to slide navigation. Narration loads voices automatically, keeps connection changes and detailed recording options collapsed, and preserves unsaved narration drafts while you switch panels.

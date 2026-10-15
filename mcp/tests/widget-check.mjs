@@ -78,6 +78,14 @@ try {
   await page.goto(`http://127.0.0.1:${server.address().port}`);
   const frame = page.frameLocator("iframe");
   await frame.locator(".sc-studio").waitFor();
+  assert.ok(await frame.locator(".sc-toolbar button:visible").count() <= 2);
+  assert.equal(await frame.getByRole("button", {name: "Save JSON", exact: true}).isVisible(), false);
+  await frame.locator(".sc-file-menu > summary").click();
+  assert.equal(await frame.getByRole("button", {name: "Save JSON", exact: true}).isVisible(), true);
+  await page.keyboard.press("Escape");
+  assert.equal(await frame.locator(".sc-file-menu").getAttribute("open"), null);
+  await page.screenshot({path: "/tmp/slidecraft-studio-redesign.png"});
+
   const pane = await browser.newPage({
     viewport: { width: 900, height: 1100 },
   });
@@ -152,11 +160,15 @@ try {
   await frame
     .getByLabel("Title", { exact: true })
     .fill("Edited from the widget");
+  await frame.getByRole("button", {name: "Speaker notes", exact: true}).click();
+  await frame.getByRole("button", {name: "Edit slide", exact: true}).click();
+  assert.equal(await frame.getByLabel("Title", {exact: true}).inputValue(), "Edited from the widget");
   await frame.getByRole("button", { name: "Apply changes" }).click();
   await frame
     .locator(".sc-slide h1")
     .filter({ hasText: "Edited from the widget" })
     .waitFor();
+  await frame.locator(".sc-file-menu > summary").click();
   await frame.getByRole("button", { name: "Save JSON", exact: true }).click();
   await frame.locator(".sc-download").waitFor();
   await frame.getByText("Show file contents", { exact: true }).click();
@@ -171,6 +183,7 @@ try {
     .locator(".sc-slide h1")
     .filter({ hasText: "One clear idea." })
     .waitFor();
+  await frame.locator(".sc-file-menu > summary").click();
   await frame.getByRole("button", { name: "Export HTML", exact: true }).click();
   await frame.locator(".sc-download").waitFor();
   await frame.getByText("Show file contents", { exact: true }).click();
@@ -195,7 +208,7 @@ try {
     .filter({ hasText: "Imported story" })
     .waitFor();
   await frame
-    .getByLabel("Think out loud. Shape the next version.")
+    .getByLabel("What would you like to change?")
     .fill("Critique this slide without changing it.");
   await frame.getByRole("button", { name: "Ask agent", exact: true }).click();
   await page.waitForFunction(() => Boolean(window.followUp));
@@ -296,6 +309,7 @@ try {
     );
   });
   await page.screenshot({ path: "/tmp/slidecraft-single-slide-color.png" });
+  await frame.locator(".sc-file-menu > summary").click();
   await frame.getByRole("button", { name: "Export HTML", exact: true }).click();
   await frame.locator(".sc-download").waitFor();
   await frame.getByText("Show file contents", { exact: true }).click();
@@ -410,6 +424,7 @@ try {
     .locator(".slide.active h1")
     .filter({ hasText: "General edit preview" })
     .waitFor();
+  await frame.locator(".sc-file-menu > summary").click();
   await frame.getByRole("button", { name: "Export HTML", exact: true }).click();
   await frame.getByText("Show file contents", { exact: true }).click();
   const customHtml = await frame
@@ -854,6 +869,13 @@ try {
   await page.waitForTimeout(200);
   const box = await frame.locator(".sc-studio").boundingBox();
   assert.ok(box.width <= 390);
+  await page.setViewportSize({width: 320, height: 1000});
+  await frame.locator(".sc-file-menu > summary").click();
+  const mobileMenu = await frame.locator(".sc-file-actions").boundingBox();
+  assert.ok(mobileMenu.x >= 0 && mobileMenu.x + mobileMenu.width <= 320);
+  await page.screenshot({path: "/tmp/slidecraft-studio-mobile.png"});
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({width: 390, height: 1000});
   // A new presentation must wait for a load decision and keep a JSON backup.
   const existingBeforeCreate = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: result.structuredContent.deck.syncToken}});
   const newDeck = await rpc("tools/call", {name: "create-deck", arguments: {title: "A separate presentation", slides: [{id: "new-opening", title: "New presentation opening", layout: "cover"}]}});
