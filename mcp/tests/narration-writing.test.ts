@@ -36,3 +36,26 @@ test("required emotion cues reject tag-free or incompatible scripts", () => {
   validateNarrationEmotion("[confident] Here is the plan.", "eleven_v4");
   assert.match(narrationWritingPrompt("d", "s", "eleven_v3", "", "a".repeat(64)), /requireEmotionTags=true/);
 });
+
+test("presentation writing targets every speech slide, rewrites existing scripts and skips silent slides", async () => {
+  const { deckNarrationWritingPrompt } = await import("../views/slide-studio/narration-writing.js");
+  const deck = {
+    id: "all-slides", version: 1 as const, revision: 2, title: "Whole presentation",
+    theme: {mode: "dark" as const, accent: "#ff9900"}, syncToken: "b".repeat(64),
+    slides: [
+      {id: "first", title: "Opening", layout: "cover" as const},
+      {id: "quiet", title: "Pause", layout: "cover" as const, narration: {mode: "silent" as const, script: "", silentDurationMs: 5000}},
+      {id: "last", title: "Closing", layout: "cover" as const, narration: {mode: "speech" as const, script: "Previous closing", silentDurationMs: 5000}},
+    ],
+  };
+  const prompt = deckNarrationWritingPrompt(deck, "eleven_v3");
+  assert.match(prompt, /ALL 2 speech slides/);
+  assert.match(prompt, /Rewrite existing speech scripts too/);
+  assert.ok(prompt.includes('"slideId":"first"'));
+  assert.ok(prompt.includes('"slideId":"last","expectedScript":"Previous closing"'));
+  assert.ok(!prompt.includes('"slideId":"quiet"'));
+  assert.match(prompt, /requireEmotionTags=true/);
+  assert.match(prompt, /Verify every target has been saved/);
+  assert.match(prompt, /Do not call generate-narration/);
+  assert.throws(() => deckNarrationWritingPrompt({...deck, slides: [deck.slides[1]]}, "eleven_v3"), /All slides are marked silent/);
+});

@@ -22,7 +22,7 @@ const init = await result(await request("initialize", {
   protocolVersion: "2025-03-26", capabilities: {},
   clientInfo: { name: "discovery-regression", version: "1" },
 }));
-assert.equal(init.serverInfo.version, "1.9.4");
+assert.equal(init.serverInfo.version, "1.9.5");
 const { tools } = await result(await request("tools/list"));
 assert.equal(tools.length, 22);
 for (const name of ["open-slides", "create-deck", "update-slide", "begin-narration-connection"])

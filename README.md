@@ -136,7 +136,7 @@ do not copy someone else's credentials or encryption key.
 1. Open a deck, expand **Narration**, and click **Connect ElevenLabs**. Sign in with the same Auth0 account and enter your ElevenLabs **secret API key value** on the external page.
 2. Give the key **Voices read**, **Models read**, and **Text to Speech** access. The key ID shown in the key list is not the secret. If the secret is no longer visible, create a new key and copy the secret when it is shown.
 3. Wait for **Connected**, return to Slidecraft, click **Load voices**, and choose a voice and model.
-4. For every slide, click **Write Narration** to have your agent write and save its script automatically. Review it, and click **Save narration** after any manual edits. Writing does not spend ElevenLabs credits. Alternatively, choose **Silent slide**, set a dwell time, and save.
+4. Click **Write Narration** once to write and save scripts for all speech slides in the presentation, including rewrites of existing scripts. Silent slides remain silent. Review the scripts, and click **Save narration** after any manual edits. Writing does not spend ElevenLabs credits. Alternatively, choose **Silent slide**, set a dwell time, and save.
 5. Click **Generate narration… → Confirm and generate**. This uses your ElevenLabs credits. Wait until every slide is ready, then test **Preview audio**.
 6. Click **Present → Auto present from beginning**. The voice narrates each slide and advances when its audio ends. If playback is blocked, click **Resume audio**. Manual navigation or switching tabs pauses narration.
 

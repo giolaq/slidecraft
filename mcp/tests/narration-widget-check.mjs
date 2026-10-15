@@ -207,7 +207,9 @@ try {
   assert.equal(requests.length, 1);
   const request = JSON.stringify(requests[0]);
   assert.match(request, /eleven_multilingual_v2/);
-  assert.match(request, /only the slide with ID/);
+  assert.match(request, /ALL 2 speech slides/);
+  assert.match(request, /Leave slides marked silent unchanged/);
+  assert.match(request, /Final slide/);
   assert.match(request, /Do NOT insert square-bracket audio tags/);
   assert.equal(generationCalls, 0);
   assert.match(request, /save-visible-narration/);

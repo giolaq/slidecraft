@@ -35,7 +35,7 @@ const narrationCsp = narrationConfig
 const serverOptions = {
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.9.4",
+  version: "1.9.5",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useCallTool, useOpenExternal, useSendFollowUp, useHostContext, useViewTool } from "mcp-use/react";
 import { z, type JSONType } from "zod";
 import type { Deck, Slide } from "./schema.js";
-import { narrationWritingPrompt, validateNarrationEmotion } from "./narration-writing.js";
+import { deckNarrationWritingPrompt, validateNarrationEmotion } from "./narration-writing.js";
 export type NarrationSlideStatus = {
   slideId: string;
   status: string;
@@ -433,31 +433,22 @@ export function NarrationPanel({
                 {draft.script.length} characters ·{" "}
                 {current?.status ?? "Not generated"}
               </p>
-              <button
-                disabled={busy || !hostCapabilities?.message}
-                onClick={() => void run(async () => {
-                  const selectedId = slide.id;
-                  const modelId = settings.modelId;
-                  if (dirty) await save();
-                  const source = JSON.stringify({
-                    title: slide.title, body: slide.body, notes: slide.notes,
-                    bullets: slide.bullets, cards: slide.cards, steps: slide.steps, metrics: slide.metrics,
-                    textElements: slide.elements?.filter(e => e.type === "text").map(e => e.text),
-                    htmlText: slide.html?.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<[^>]*>/g, " "),
-                    existingScript: slide.narration?.script,
-                  }).slice(0, 16000);
-                  const saved = latest.current;
-                  await followUp({ prompt: narrationWritingPrompt(saved.id, selectedId, modelId, source, saved.syncToken, saved.slides.find(s => s.id === selectedId)?.narration?.script ?? "") });
-                  setMessage("Asked your agent to write and save narration for this slide. The script updates here when it is ready.");
-                })}
-              >
-                Write Narration
-              </button>
-              <p>{hostCapabilities?.message
-                ? "Your agent writes a script with natural pacing and expression for your selected voice model. Review it before generating audio."
-                : "Ask your agent in chat to write narration for this slide, or enter a script here."}</p>
             </>
           )}
+          <button
+            disabled={busy || !hostCapabilities?.message || deck.slides.every(s => s.narration?.mode === "silent")}
+            onClick={() => void run(async () => {
+              const modelId = settings.modelId;
+              if (dirty) await save();
+              await followUp({ prompt: deckNarrationWritingPrompt(latest.current, modelId) });
+              setMessage("Asked your agent to write and save narration for all speech slides. Each script appears as it is saved.");
+            })}
+          >
+            Write Narration
+          </button>
+          <p>{hostCapabilities?.message
+            ? "Writes scripts for the whole presentation, including slides with existing scripts. Silent slides stay silent. Review the scripts before generating audio."
+            : "Ask your agent in chat to write narration for all speech slides, or enter scripts manually."}</p>
           <button disabled={busy || !dirty} onClick={() => void run(save)}>
             Save narration
           </button>
