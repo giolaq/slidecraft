@@ -72,6 +72,12 @@ const created = await call("create-deck", {
 });
 assert.ok(!created.isError);
 assert.notEqual(created.structuredContent.deck.id, deck.id);
+assert.equal(created.structuredContent.requiresLoadConfirmation, true);
+assert.match(created.structuredContent.jsonFilename, /\.deck\.json$/);
+assert.deepEqual(JSON.parse(created._meta.fileText), created.structuredContent.deck);
+assert.match(created.structuredContent.message, /load this presentation now, or keep it for later/);
+const stillOpen = await call("get-live-deck", {syncToken: initial.structuredContent.deck.syncToken});
+assert.deepEqual(stillOpen.structuredContent.deck, initial.structuredContent.deck);
 const moved = await call("edit-deck", {
   deck,
   expectedRevision: 0,

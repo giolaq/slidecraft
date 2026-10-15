@@ -35,11 +35,11 @@ const narrationCsp = narrationConfig
 const serverOptions = {
   name: "slidecraft",
   title: "Slidecraft",
-  version: "1.9.5",
+  version: "1.10.0",
   description:
     "Create, discuss, refine, and present animated HTML slide decks with an interactive studio.",
   instructions:
-    "Use open-slides to open Slidecraft. Use create-deck for new decks, update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance. When narration is configured, narration-enabled decks are additionally saved per authenticated user and can be reopened with list-narrated-decks and reopen-narrated-deck. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Slides with elements use a freeform visual canvas: edit /slides/INDEX/elements/INDEX/text, color, x, y, width, height, fontSize, bold, src or fit using revise-presentation. On these slides title/body are metadata; editing them does not change visible elements. Elements use a 1600 by 900 canvas and array order is stacking order. Preserve elements when editing. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
+    "Use open-slides to open Slidecraft. Use create-deck for new decks. Creation prepares a separate JSON-backed deck and must not replace the current presentation. After finishing creation ask whether the user wants to load it now or keep it for later; only call open-slides for it after explicit agreement. Use update-slide for focused revisions, edit-deck for structure, inspect-deck for critique context, and export-deck for HTML. Read the slidecraft skill when available. Pass the latest complete deck, including id, revision, and syncToken. Live sessions share revisions for up to 24 hours on this server instance. When account storage is configured, created and edited decks are saved per authenticated user and can be reopened with list-narrated-decks and reopen-narrated-deck. Read get-live-deck before editing an older conversation snapshot or after a conflict. Never drop or change syncToken when revising a deck. Preserve unrelated slides and distinguish discussion from edits. When the studio is open, prefer the mounted change-visible-slide-colors tool to update the existing preview using its latest state. For a single slide, pass slideId to set-theme, or use update-slide with changes.colors. The mounted tool defaults to the selected slide; use scope=deck only for the whole presentation. Otherwise use set-theme for color changes: background sets the slide canvas, foreground sets title/text color, accent sets highlights. Use color fields for simple color changes; use deck.css for arbitrary typography, spacing, positioning, and styling. Edit tools automatically return a fresh preview. Only claim a change after a successful tool result; connected studios automatically reload the shared revision; do not ask the user to import JSON for an edit. For photos use add-photo to embed an optimized image; do not put markdown image syntax in plain-text fields or use local/sandbox file paths as image URLs. An arbitrary external HTML image may be blocked by host CSP. Use revise-presentation for any edit: nested text, layouts, colors, notes, HTML/SVG/images, CSS, JavaScript, array items, deletion, duplication, reordering, or full presentation replacement. Use edit-visible-presentation when mounted to operate on current UI state. Slides with elements use a freeform visual canvas: edit /slides/INDEX/elements/INDEX/text, color, x, y, width, height, fontSize, bold, src or fit using revise-presentation. On these slides title/body are metadata; editing them does not change visible elements. Elements use a 1600 by 900 canvas and array order is stacking order. Preserve elements when editing. Custom CSS/JavaScript render in an isolated preview as well as HTML export.",
   websiteUrl: "https://github.com/giolaq/slidecraft",
   icons: [{ src: "icon.svg", mimeType: "image/svg+xml", sizes: ["20x20"] }],
 };
@@ -91,7 +91,7 @@ async function result(
   if (
     narrationEnabled &&
     auth &&
-    (deck.narration || deck.slides.some((s) => s.narration))
+    (!opening || deck.narration || deck.slides.some((s) => s.narration))
   )
     await requireNarration().save(requireOwner(auth), deck);
   message += ` Revision ${deck.revision}. Preview theme: ${JSON.stringify(deck.theme)}. Connected studios automatically load this revision.`;
@@ -144,7 +144,7 @@ export const createDeck = server.tool(
     view: { csp: narrationCsp, name: "created-slides", prefersBorder: false },
     title: "Create presentation",
     description:
-      "Validate a new presentation from authored slides. Returns the complete deck and displays its preview.",
+      "Create a separate presentation and prepare its JSON backup without loading it over the current studio. After creation, ask the user whether to load it now or keep it for later. Do not call open-slides for the new deck until the user agrees. The creation card offers Load now, Keep for later and Download JSON.",
     inputSchema: z.object({
       title: z.string().min(1).max(500),
       author: z.string().max(500).optional(),
@@ -153,12 +153,16 @@ export const createDeck = server.tool(
       css: z.string().max(24000).optional(),
       script: z.string().max(24000).optional(),
     }),
-    outputSchema: deckResultSchema,
+    outputSchema: deckResultSchema.extend({
+      requiresLoadConfirmation: z.literal(true),
+      savedToAccount: z.boolean(),
+      jsonFilename: z.string(),
+    }),
     annotations: hints,
   },
   async (args, ctx) => {
     try {
-      return await result(
+      const created = await result(
         checkDeck({
           ...args,
           version: 1,
@@ -166,11 +170,22 @@ export const createDeck = server.tool(
           revision: 0,
           theme: args.theme ?? { mode: "dark", accent: "#cbff73" },
         }),
-        "Created a new deck and returned its preview.",
+        "Created a separate presentation. JSON backup is ready; the currently open presentation has not been replaced. Ask the user: Would you like to load this presentation now, or keep it for later? Do not open it without their answer.",
         undefined,
         false,
         ctx.auth,
       );
+      const savedToAccount = Boolean(narrationEnabled && ctx.auth);
+      return {
+        ...created,
+        structuredContent: {
+          ...created.structuredContent,
+          requiresLoadConfirmation: true as const,
+          savedToAccount,
+          jsonFilename: (args.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 80) || "presentation") + ".deck.json",
+        },
+        _meta: { fileText: JSON.stringify(created.structuredContent.deck, null, 2) },
+      };
     } catch (e) {
       return fail(e);
     }

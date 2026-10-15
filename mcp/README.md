@@ -330,3 +330,7 @@ Narration-enabled decks have durable per-user recovery through
 `list-narrated-decks` / `reopen-narrated-deck`. Regular live editing still uses the
 existing single-instance, 24-hour session storage. See the
 [operator and verification guide](docs/elevenlabs-setup.md) for production details.
+
+### Create a new deck without replacing the current one
+
+When the agent finishes creating a presentation, it asks whether to load it now or keep it for later. The creation card offers **Load now**, **Keep for later**, and **Download JSON**. The new deck is not loaded until you choose. A complete JSON copy is saved to your signed-in account on the configured cloud service, even without ElevenLabs or narration. You can retrieve it through the saved-deck tools (currently named `list-narrated-decks` and `reopen-narrated-deck`). On a local server without durable account storage, download the JSON to keep a permanent copy. **Show JSON backup** provides a fallback when a host blocks downloads. Normal edits to your current deck continue to update it directly.

@@ -854,9 +854,28 @@ try {
   await page.waitForTimeout(200);
   const box = await frame.locator(".sc-studio").boundingBox();
   assert.ok(box.width <= 390);
+  // A new presentation must wait for a load decision and keep a JSON backup.
+  const existingBeforeCreate = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: result.structuredContent.deck.syncToken}});
+  const newDeck = await rpc("tools/call", {name: "create-deck", arguments: {title: "A separate presentation", slides: [{id: "new-opening", title: "New presentation opening", layout: "cover"}]}});
+  assert.equal(newDeck.structuredContent.requiresLoadConfirmation, true);
+  const creationView = await rpc("resources/read", {uri: "ui://views/created-slides.html"});
+  await page.evaluate(({next, markup}) => window.showPreview(next, markup), {next: newDeck, markup: creationView.contents[0].text});
+  const readyCard = frame.getByRole("region", {name: "New presentation ready"});
+  await readyCard.waitFor();
+  assert.equal(await frame.locator(".sc-studio").count(), 0);
+  const jsonBackup = await readyCard.getByLabel("New presentation JSON").inputValue();
+  assert.deepEqual(JSON.parse(jsonBackup), newDeck.structuredContent.deck);
+  await readyCard.getByRole("button", {name: "Keep for later", exact: true}).click();
+  await readyCard.getByText("Kept for later.", {exact: false}).waitFor();
+  assert.equal(await frame.locator(".sc-studio").count(), 0);
+  const existingAfterCreate = await rpc("tools/call", {name: "get-live-deck", arguments: {syncToken: result.structuredContent.deck.syncToken}});
+  assert.deepEqual(existingAfterCreate.structuredContent.deck, existingBeforeCreate.structuredContent.deck);
+  await readyCard.getByRole("button", {name: "Load now", exact: true}).click();
+  await frame.locator(".sc-studio").waitFor();
+  await frame.locator(".sc-slide").getByText("New presentation opening", {exact: true}).waitFor();
   assert.deepEqual(errors, []);
   console.log(
-    "Widget checks passed: visual dragging, color pickers, image upload, persisted geometry, export parity, concurrent draft conflict protection, decoded embedded image, audience presentation, speaker notes, slide navigation, separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit. Host bridge simulated; MCP tools and view runtime are real.",
+    "Widget checks passed: visual dragging, color pickers, image upload, persisted geometry, export parity, concurrent draft conflict protection, decoded embedded image, audience presentation, speaker notes, slide navigation, separate pane auto-reload with stalled host live-tool bridge, existing studio auto-reload without import or new tool notification, general editing, custom HTML/CSS/JS preview and export, sandbox isolation, selected-slide colors, non-first-slide preview selection, unchanged neighboring slide, rendered HTML colors, navigation, tool-backed edit, add slide, JSON export/import, HTML export, model context, follow-up, mobile fit, creation load confirmation, keep-for-later JSON backup and unchanged original deck. Host bridge simulated; MCP tools and view runtime are real.",
   );
 } finally {
   await browser.close();

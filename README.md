@@ -149,3 +149,5 @@ voice, generate the affected recordings again.
 
 For common errors, including `api_key_id_used_as_api_key`, expired setup links,
 missing tools, and disabled generation, see [troubleshooting](mcp/README.md#narration-troubleshooting).
+
+When you ask Slidecraft to create another presentation, it finishes the deck and asks whether to **Load now** or **Keep for later**. The current presentation is not replaced automatically. The creation card includes **Download JSON** and **Show JSON backup**; on the configured cloud service, the complete deck is also saved to your signed-in account.

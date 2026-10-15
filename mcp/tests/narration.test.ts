@@ -74,6 +74,18 @@ async function fixture(t: Parameters<Parameters<typeof test>[1]>[0]) {
     calls: () => calls,
   };
 }
+test("ordinary presentations save durably without narration or a connected provider", async (t) => {
+  const f = await fixture(t);
+  const plain = deck();
+  delete plain.narration;
+  plain.slides.forEach(slide => delete slide.narration);
+  const key = await f.service.save("unconnected-owner", plain);
+  const restarted = new NarrationService(new FileStore(f.dir + "/state.json"), f.assets, f.provider, f.vault);
+  assert.deepEqual(await restarted.reopen("unconnected-owner", key), plain);
+  assert.equal((await restarted.saved("unconnected-owner")).length, 1);
+  await assert.rejects(restarted.reopen("another-owner", key));
+  assert.equal(f.calls(), 0);
+});
 test("key encryption, single-use account-bound setup, cross-user job/audio isolation", async (t) => {
   const f = await fixture(t),
     ticket = await f.service.beginConnection("alice");
